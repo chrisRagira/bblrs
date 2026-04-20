@@ -1,0 +1,544 @@
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { parcelsApi, usersApi } from "../api/services";
+import { useAuth } from "../context/AuthContext";
+import { FormField, SelectField } from "../components/ui/FormField";
+import { Alert, Breadcrumb } from "../components/ui/Feedback";
+import { Card } from "../components/ui/Card";
+import Button from "../components/ui/Button";
+import { C, font } from "../styles/tokens";
+
+const KENYAN_COUNTIES = [
+  "Baringo","Bomet","Bungoma","Busia","Elgeyo-Marakwet","Embu","Garissa",
+  "Homa Bay","Isiolo","Kajiado","Kakamega","Kericho","Kiambu","Kilifi",
+  "Kirinyaga","Kisii","Kisumu","Kitui","Kwale","Laikipia","Lamu","Machakos",
+  "Makueni","Mandera","Marsabit","Meru","Migori","Mombasa","Murang'a",
+  "Nairobi","Nakuru","Nandi","Narok","Nyamira","Nyandarua","Nyeri","Samburu",
+  "Siaya","Taita-Taveta","Tana River","Tharaka-Nithi","Trans Nzoia","Turkana",
+  "Uasin Gishu","Vihiga","Wajir","West Pokot",
+].map((c) => ({ value: c, label: c }));
+
+const LAND_USES = [
+  { value: "RESIDENTIAL",  label: "Residential"  },
+  { value: "AGRICULTURAL", label: "Agricultural" },
+  { value: "COMMERCIAL",   label: "Commercial"   },
+  { value: "INDUSTRIAL",   label: "Industrial"   },
+];
+
+const TABS = ["1. Location", "2. Ownership", "3. Document", "4. Confirm"];
+
+export default function RegisterParcel() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+
+  const [step,    setStep]    = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState("");
+  const [txId,    setTxId]    = useState("");
+
+  const [location, setLocation] = useState({
+    titleNumber: "", county: "", subCounty: "", ward: "",
+    areaHectares: "", landUseType: "RESIDENTIAL",
+    gpsLat: "", gpsLng: "", gpsPolygon: "",
+  });
+
+  const [ownership, setOwnership] = useState({
+    ownerNationalId: "", ownerFullName: "",
+    registrationDate: "", registrarNationalId: user?.nationalId || "",
+  });
+
+  // Autofill states
+  const [isFetchingOwner, setIsFetchingOwner] = useState(false);
+  const [ownerFetchError, setOwnerFetchError] = useState("");
+  const debounceTimerRef = useRef(null);
+  const lastFetchedIdRef = useRef("");
+
+  const [docFile,    setDocFile]    = useState(null);
+  const [docType,    setDocType]    = useState("TITLE_DEED");
+  const [dragActive, setDragActive] = useState(false);
+
+  const setL = (f) => (e) => setLocation((s) => ({ ...s, [f]: e.target.value }));
+  const setO = (f) => (e) => setOwnership((s) => ({ ...s, [f]: e.target.value }));
+
+  const loc1Valid  = location.titleNumber && location.county && location.subCounty && location.areaHectares && location.landUseType;
+  const own2Valid  = ownership.ownerNationalId && ownership.ownerFullName && ownership.registrationDate;
+
+  // Fetch user details by National ID
+  const fetchOwnerDetails = useCallback(async (nationalId) => {
+    // Don't fetch if ID is empty or same as last fetched
+    if (!nationalId || nationalId.length < 5 || nationalId === lastFetchedIdRef.current) {
+      if (!nationalId || nationalId.length < 5) {
+        setOwnerFetchError("");
+        // Only clear name if ID is empty or too short
+        if (!nationalId || nationalId.length < 5) {
+          setOwnership(prev => ({ ...prev, ownerFullName: "" }));
+        }
+      }
+      return;
+    }
+
+    setIsFetchingOwner(true);
+    setOwnerFetchError("");
+    
+    try {
+      const response = await usersApi.getByNationalId(nationalId);
+      const userData = response.data.data;
+      
+      // Autofill owner's full name if found
+      if (userData && userData.fullName) {
+        setOwnership(prev => ({
+          ...prev,
+          ownerFullName: userData.fullName
+        }));
+        setOwnerFetchError("");
+        lastFetchedIdRef.current = nationalId;
+      } else {
+        setOwnerFetchError("User not found. Please check the National ID.");
+        setOwnership(prev => ({
+          ...prev,
+          ownerFullName: ""
+        }));
+      }
+    } catch (err) {
+      console.error("Error fetching owner:", err);
+      if (err.response?.status === 404) {
+        setOwnerFetchError("User not found. Please verify the National ID.");
+      } else {
+        setOwnerFetchError("Error fetching user details. Please try again.");
+      }
+      setOwnership(prev => ({
+        ...prev,
+        ownerFullName: ""
+      }));
+    } finally {
+      setIsFetchingOwner(false);
+    }
+  }, []);
+
+  // Handle debounced fetch when ownerNationalId changes
+  useEffect(() => {
+    // Clear existing timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // Set new timer
+    debounceTimerRef.current = setTimeout(() => {
+      fetchOwnerDetails(ownership.ownerNationalId);
+    }, 500);
+
+    // Cleanup on unmount or when ID changes
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [ownership.ownerNationalId, fetchOwnerDetails]);
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragActive(false);
+    const file = e.dataTransfer.files[0];
+    if (file) setDocFile(file);
+  };
+
+  const handleSubmit = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      // 1. Create parcel on blockchain
+      const parcelRes = await parcelsApi.create({
+        titleNumber:      location.titleNumber,
+        county:           location.county,
+        subCounty:        location.subCounty,
+        ward:             location.ward,
+        areaHectares:     Number(location.areaHectares),
+        landUseType:      location.landUseType,
+        gpsCoordinates:   { lat: Number(location.gpsLat), lng: Number(location.gpsLng), polygon: location.gpsPolygon },
+        ownerNationalId:  ownership.ownerNationalId,
+        registrationDate: ownership.registrationDate,
+        registrarID:      ownership.registrarNationalId,
+      });
+
+      const parcelID = parcelRes.data.data.parcelID;
+
+      // 2. Upload document if provided
+      if (docFile) {
+        const fd = new FormData();
+        fd.append("file",    docFile);
+        fd.append("docType", docType);
+        await parcelsApi.uploadDocument(parcelID, fd);
+      }
+
+      setTxId(parcelRes.data.data.blockchainTxID || parcelID);
+      setStep(5); // success
+    } catch (err) {
+      setError(err.response?.data?.message || "Registration failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Reset form
+  const resetForm = () => {
+    setStep(1);
+    setLocation({ 
+      titleNumber: "", county: "", subCounty: "", ward: "",
+      areaHectares: "", landUseType: "RESIDENTIAL", 
+      gpsLat: "", gpsLng: "", gpsPolygon: "" 
+    });
+    setOwnership({ 
+      ownerNationalId: "", ownerFullName: "", 
+      registrationDate: "", registrarNationalId: user?.nationalId || "" 
+    });
+    setDocFile(null);
+    setOwnerFetchError("");
+    lastFetchedIdRef.current = "";
+  };
+
+  return (
+    <div className="page-wrapper--narrow">
+      <Breadcrumb items={[
+        { label: "Dashboard",      to: "/dashboard"       },
+        { label: "Approval Queue", to: "/registrar/queue" },
+        { label: "Register Parcel" },
+      ]} />
+
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontFamily: font.head, fontSize: 26, fontWeight: 600, color: C.navy }}>
+          Register Land Parcel
+        </h1>
+        <p style={{ color: C.textSecondary, fontSize: 14, marginTop: 4 }}>
+          Create a new parcel record on the Hyperledger Fabric ledger.
+        </p>
+      </div>
+
+      {/* Tab selector */}
+      {step < 5 && (
+        <div style={{
+          display: "flex", gap: 0, background: C.bg,
+          borderRadius: 8, padding: 4, marginBottom: 24,
+        }}>
+          {TABS.map((label, i) => (
+            <button
+              key={label}
+              onClick={() => i + 1 < step && setStep(i + 1)}
+              style={{
+                flex: 1, padding: "8px 4px", border: "none", borderRadius: 6,
+                cursor: i + 1 < step ? "pointer" : "default",
+                background: step === i + 1 ? C.white : "transparent",
+                color: step === i + 1 ? C.navy : step > i + 1 ? C.teal : C.textSecondary,
+                fontSize: 12, fontWeight: step === i + 1 ? 600 : 400,
+                boxShadow: step === i + 1 ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                transition: "all 0.15s",
+              }}
+            >
+              {step > i + 1 ? "✓ " : ""}{label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <Card>
+        {error && <Alert type="danger">{error}</Alert>}
+
+        {/* ── Step 1: Location ─────────────────────────────────── */}
+        {step === 1 && (
+          <>
+            <h3 style={{ fontFamily: font.head, fontSize: 15, fontWeight: 600, color: C.navy, marginBottom: 16 }}>
+              Location &amp; Classification
+            </h3>
+
+            <FormField
+              label="Official Title Number" name="titleNumber"
+              placeholder="KE/NKR/2025/0001"
+              value={location.titleNumber} onChange={setL("titleNumber")}
+              helper="Must be unique. Format: KE/[County Code]/[Year]/[Number]"
+              required
+            />
+
+            <div className="grid-2">
+              <SelectField
+                label="County" name="county"
+                value={location.county} onChange={setL("county")}
+                options={[{ value: "", label: "Select County" }, ...KENYAN_COUNTIES]}
+                required
+              />
+              <FormField
+                label="Sub-County" name="subCounty"
+                placeholder="e.g. Nakuru East"
+                value={location.subCounty} onChange={setL("subCounty")}
+                required
+              />
+            </div>
+
+            <div className="grid-2">
+              <FormField
+                label="Ward" name="ward"
+                placeholder="e.g. Biashara"
+                value={location.ward} onChange={setL("ward")}
+              />
+              <FormField
+                label="Area (hectares)" name="areaHectares" type="number"
+                placeholder="0.00"
+                value={location.areaHectares} onChange={setL("areaHectares")}
+                required
+              />
+            </div>
+
+            <SelectField
+              label="Land Use Type" name="landUseType"
+              value={location.landUseType} onChange={setL("landUseType")}
+              options={LAND_USES} required
+            />
+
+            <div className="grid-2">
+              <FormField
+                label="GPS Latitude" name="gpsLat" type="number"
+                placeholder="-0.3031"
+                value={location.gpsLat} onChange={setL("gpsLat")}
+              />
+              <FormField
+                label="GPS Longitude" name="gpsLng" type="number"
+                placeholder="36.0800"
+                value={location.gpsLng} onChange={setL("gpsLng")}
+              />
+            </div>
+
+            <FormField
+              label="GPS Polygon (GeoJSON)" name="gpsPolygon"
+              placeholder='{"type":"Polygon","coordinates":[[…]]}'
+              value={location.gpsPolygon} onChange={setL("gpsPolygon")}
+              helper="Optional: paste polygon coordinates for accurate boundary mapping."
+            />
+
+            <Button full onClick={() => setStep(2)} disabled={!loc1Valid}>
+              Continue to Ownership
+            </Button>
+          </>
+        )}
+
+        {/* ── Step 2: Ownership ────────────────────────────────── */}
+        {step === 2 && (
+          <>
+            <h3 style={{ fontFamily: font.head, fontSize: 15, fontWeight: 600, color: C.navy, marginBottom: 16 }}>
+              Owner Registration
+            </h3>
+
+            <FormField
+              label="Owner's National ID" name="ownerNationalId"
+              placeholder="12345678"
+              value={ownership.ownerNationalId} 
+              onChange={setO("ownerNationalId")}
+              helper="The owner must be a registered user in the BBLRS system. Full name will auto-fill."
+              required
+            />
+            
+            {/* Show loading indicator while fetching */}
+            {isFetchingOwner && (
+              <div style={{ 
+                marginTop: -8, 
+                marginBottom: 16, 
+                fontSize: 12, 
+                color: C.teal,
+                display: "flex",
+                alignItems: "center",
+                gap: 8
+              }}>
+                <span>Fetching user details...</span>
+                <span style={{ 
+                  display: "inline-block", 
+                  width: 12, 
+                  height: 12, 
+                  border: `2px solid ${C.teal}`,
+                  borderTopColor: "transparent",
+                  borderRadius: "50%",
+                  animation: "spin 0.6s linear infinite"
+                }} />
+              </div>
+            )}
+            
+            {/* Show error message if user not found */}
+            {ownerFetchError && !isFetchingOwner && (
+              <div style={{ 
+                marginTop: -8, 
+                marginBottom: 16, 
+                fontSize: 12, 
+                color: C.danger,
+                padding: "8px 12px",
+                background: "#fee",
+                borderRadius: 6
+              }}>
+                ⚠️ {ownerFetchError}
+              </div>
+            )}
+            
+            <FormField
+              label="Owner's Full Name" name="ownerFullName"
+              placeholder="Will be auto-filled from National ID"
+              value={ownership.ownerFullName} 
+              onChange={setO("ownerFullName")}
+              required
+              disabled={isFetchingOwner}
+            />
+            
+            <FormField
+              label="Registration Date" name="registrationDate" type="date"
+              value={ownership.registrationDate} 
+              onChange={setO("registrationDate")}
+              required
+            />
+            
+            <FormField
+              label="Registrar National ID" name="registrarNationalId"
+              placeholder="Your national ID"
+              value={user?.nationalId || ""} 
+              disabled={true}
+              helper="Automatically set to your registered ID"
+              required
+            />
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <Button variant="secondary" onClick={() => setStep(1)}>Back</Button>
+              <Button full onClick={() => setStep(3)} disabled={!own2Valid}>
+                Continue to Documents
+              </Button>
+            </div>
+          </>
+        )}
+
+        {/* ── Step 3: Document upload ───────────────────────────── */}
+        {step === 3 && (
+          <>
+            <h3 style={{ fontFamily: font.head, fontSize: 15, fontWeight: 600, color: C.navy, marginBottom: 12 }}>
+              Title Deed Upload
+            </h3>
+            <Alert type="info">
+              The document will be stored on IPFS and its CID anchored immutably on the blockchain.
+            </Alert>
+
+            <div
+              className={`drop-zone ${docFile ? "drop-zone--filled" : ""}`}
+              onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={handleDrop}
+              onClick={() => document.getElementById("doc-input").click()}
+              style={{ marginBottom: 16, borderColor: dragActive ? C.teal : undefined }}
+            >
+              <input
+                id="doc-input" type="file"
+                accept=".pdf,.jpg,.jpeg,.png"
+                style={{ display: "none" }}
+                onChange={(e) => setDocFile(e.target.files[0])}
+              />
+              {docFile ? (
+                <>
+                  <span style={{ fontSize: 32, display: "block", marginBottom: 8 }}>📄</span>
+                  <p style={{ fontWeight: 500, color: C.success }}>{docFile.name}</p>
+                  <p style={{ fontSize: 12, color: C.textSecondary }}>
+                    {(docFile.size / 1024 / 1024).toFixed(2)} MB · Click to change
+                  </p>
+                </>
+              ) : (
+                <>
+                  <span style={{ fontSize: 36, display: "block", marginBottom: 10 }}>📂</span>
+                  <p style={{ fontWeight: 500, color: C.navy, marginBottom: 4 }}>Drop document here or click to upload</p>
+                  <p style={{ fontSize: 13, color: C.textSecondary }}>PDF, JPG, or PNG · Max 10 MB</p>
+                </>
+              )}
+            </div>
+
+            <SelectField
+              label="Document Type" name="docType"
+              value={docType} onChange={(e) => setDocType(e.target.value)}
+              options={[
+                { value: "TITLE_DEED",  label: "Title Deed"  },
+                { value: "SURVEY_MAP",  label: "Survey Map"  },
+                { value: "OTHER",       label: "Other"       },
+              ]}
+            />
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <Button variant="secondary" onClick={() => setStep(2)}>Back</Button>
+              <Button full onClick={() => setStep(4)}>Review Registration</Button>
+            </div>
+          </>
+        )}
+
+        {/* ── Step 4: Confirm ───────────────────────────────────── */}
+        {step === 4 && (
+          <>
+            <Alert type="warn">
+              Review all details. Submitting will write an immutable record to the Hyperledger Fabric ledger.
+            </Alert>
+
+            <div style={{ background: C.bg, borderRadius: 8, padding: 16, marginBottom: 20 }}>
+              {[
+                ["Title Number",  location.titleNumber],
+                ["County",        location.county],
+                ["Sub-County",    location.subCounty],
+                ["Area",          `${location.areaHectares} ha`],
+                ["Land Use",      location.landUseType],
+                ["Owner",         `${ownership.ownerFullName} (${ownership.ownerNationalId})`],
+                ["Reg. Date",     ownership.registrationDate],
+                ["Registrar ID",  user?.nationalId || "Not set"],
+                ["GPS",           location.gpsLat ? `${location.gpsLat}, ${location.gpsLng}` : "Not provided"],
+                ["Document",      docFile ? docFile.name : "Not uploaded"],
+              ].map(([k, v]) => (
+                <div key={k} style={{
+                  display: "flex", justifyContent: "space-between",
+                  padding: "7px 0", borderBottom: `1px solid ${C.border}`, fontSize: 13,
+                }}>
+                  <span style={{ color: C.textSecondary }}>{k}</span>
+                  <span style={{ fontWeight: 500, textAlign: "right", maxWidth: "60%" }}>{v}</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <Button variant="secondary" onClick={() => setStep(3)}>Back</Button>
+              <Button full onClick={handleSubmit} disabled={loading}>
+                {loading ? "Writing to blockchain…" : "Submit to Blockchain"}
+              </Button>
+            </div>
+          </>
+        )}
+
+        {/* ── Step 5: Success ───────────────────────────────────── */}
+        {step === 5 && (
+          <>
+            <Alert type="success">
+              Parcel registered successfully on the Hyperledger Fabric ledger.
+            </Alert>
+            <div style={{ textAlign: "center", padding: "16px 0 24px" }}>
+              <span style={{ fontSize: 48, display: "block", marginBottom: 12 }}>🎉</span>
+              <p style={{ fontFamily: font.head, fontSize: 18, fontWeight: 600, color: C.navy, marginBottom: 6 }}>
+                {location.titleNumber}
+              </p>
+              {txId && <p className="monospace" style={{ marginBottom: 16 }}>{txId}</p>}
+              <p style={{ fontSize: 14, color: C.textSecondary }}>
+                The parcel is now live on the blockchain and searchable by the public.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Button variant="secondary" full onClick={() => navigate("/registrar/queue")}>
+                Back to Queue
+              </Button>
+              <Button full onClick={resetForm}>
+                Register Another
+              </Button>
+            </div>
+          </>
+        )}
+      </Card>
+      
+      {/* Add keyframes for loading spinner animation */}
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
+  );
+}
