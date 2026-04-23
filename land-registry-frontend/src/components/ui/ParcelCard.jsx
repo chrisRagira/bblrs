@@ -1,91 +1,71 @@
-import { Link } from "react-router-dom";
-import Badge from "./Badge";
-import { C, font } from "../../styles/tokens";
+// ParcelCard.jsx
+// Accepts an optional `paymentId` prop and threads it into the detail link.
+// If no paymentId is present the card still renders, but the link won't work
+// past the server's 402 gate — consistent with the search paywall behaviour.
 
-export default function ParcelCard({ parcel }) {
-  const {
-    parcelID,
-    titleNumber,
-    county,
-    subCounty,
-    ward,
-    status,
-    areaHectares,
-    landUseType,
-    gpsCoordinates,
-    blockchainRef,
-    owner // ✅ NEW (comes from backend)
-  } = parcel;
+import { Link } from "react-router-dom";
+import { C } from "../../styles/tokens";
+
+const STATUS_COLORS = {
+  ACTIVE:     { bg: "#e6f4ea", color: "#1e7e34" },
+  ENCUMBERED: { bg: "#fff3cd", color: "#856404" },
+  DISPUTED:   { bg: "#fde8e8", color: "#b91c1c" },
+  INACTIVE:   { bg: "#f1f1f1", color: "#6b7280" },
+};
+
+export default function ParcelCard({ parcel, paymentId }) {
+  const badge = STATUS_COLORS[parcel.status] ?? STATUS_COLORS.INACTIVE;
+
+  // Build the detail URL — include paymentId so the server accepts the request
+  const detailPath = paymentId
+    ? `/parcels/${parcel.parcelID}?paymentId=${paymentId}`
+    : `/parcels/${parcel.parcelID}`;
 
   return (
     <div style={{
       background: "#fff",
       border: `1px solid ${C.border}`,
       borderRadius: 10,
-      padding: "18px 20px",
-      boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-      transition: "box-shadow 0.2s",
+      padding: "16px 20px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+      flexWrap: "wrap",
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        
-        <div style={{ flex: 1 }}>
-          
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-            <span style={{ fontFamily: font.mono, fontSize: 13, color: C.teal, fontWeight: 500 }}>
-              {titleNumber}
-            </span>
-
-            <Badge status={status} />
-
-            <span style={{
-              fontSize: 12,
-              color: C.textSecondary,
-              background: C.bg,
-              padding: "1px 8px",
-              borderRadius: 10,
-            }}>
-              {landUseType}
-            </span>
-          </div>
-
-          <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-            
-            <span style={{ fontSize: 13, color: C.textSecondary }}>
-              📍 {county}{subCounty ? ` — ${subCounty}` : ""}
-            </span>
-
-            <span style={{ fontSize: 13, color: C.textSecondary }}>
-              📐 {areaHectares} ha
-            </span>
-
-            {/* ✅ OWNER (NO FETCH NEEDED) */}
-            {owner?.fullName && (
-              <span style={{ fontSize: 13, color: C.textSecondary }}>
-                👤 {owner.fullName}
-              </span>
-            )}
-
-          </div>
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+          <span style={{ fontWeight: 700, color: C.navy, fontSize: 15 }}>
+            {parcel.title_number ?? parcel.titleNumber}
+          </span>
+          <span style={{
+            fontSize: 11, fontWeight: 600, padding: "2px 8px",
+            borderRadius: 20, background: badge.bg, color: badge.color,
+            textTransform: "uppercase", letterSpacing: "0.04em",
+          }}>
+            {parcel.status}
+          </span>
         </div>
+        <p style={{ fontSize: 13, color: C.textSecondary, margin: 0 }}>
+          {[parcel.county, parcel.sub_county ?? parcel.subCounty, parcel.ward]
+            .filter(Boolean).join(" · ")}
+        </p>
+      </div>
 
+      <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
+        <span style={{ fontSize: 13, color: C.textSecondary }}>
+          {parcel.area_hectares ?? parcel.areaHectares} ha
+        </span>
         <Link
-          to={`/parcels/${parcelID}`}
+          to={detailPath}
           style={{
-            padding: "6px 14px",
-            borderRadius: 6,
-            border: `1px solid ${C.border}`,
-            background: "#fff",
-            color: C.navy,
-            fontSize: 13,
-            fontWeight: 500,
+            padding: "7px 16px", borderRadius: 6, fontSize: 13, fontWeight: 500,
+            background: C.navy, color: "#fff", textDecoration: "none",
             whiteSpace: "nowrap",
-            flexShrink: 0,
-            marginLeft: 16,
           }}
         >
           View Details →
         </Link>
-
       </div>
     </div>
   );

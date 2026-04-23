@@ -11,7 +11,7 @@ router.get(
       const { id } = req.params;
 
       const [rows] = await req.db.execute(
-        "SELECT user_id, full_name, national_id, role FROM users WHERE national_id=?",
+        "SELECT user_id, first_name, last_name, national_id, role FROM users WHERE national_id=?",
         [id]
       );
 
@@ -36,7 +36,7 @@ router.get(
       const { id } = req.params;
 
       const [rows] = await req.db.execute(
-        "SELECT user_id, full_name, national_id, role FROM users WHERE user_id=?",
+        "SELECT user_id, first_name, last_name, national_id, role FROM users WHERE user_id=?",
         [id]
       );
 

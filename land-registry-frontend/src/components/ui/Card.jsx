@@ -49,3 +49,5 @@ export function PageHeader({ title, subtitle, action }) {
     </div>
   );
 }
+
+export default Card;

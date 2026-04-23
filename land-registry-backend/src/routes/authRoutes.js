@@ -40,7 +40,7 @@ router.post("/forgot-password", async (req, res) => {
       pass: process.env.EMAIL_PASS || "zabj xkjo lugd gnvy",  // ⚠️ use app password, not real password
     },
   });
-  const resetLink = `http://34.72.235.128:3000/reset-password/${token}`;
+  const resetLink = `http://35.209.144.131:3000/reset-password/${token}`;
 
   await transporter.sendMail({
     from: `"BBLRS System" <${process.env.EMAIL_USER}>`,
@@ -131,12 +131,13 @@ router.post("/mfa/verify", async (req, res) => {
 
     return res.json({
       token,
-       role: user.role,
-  user: {
-    id: user.user_id,
-    fullName: user.full_name,
-    email: user.email
-  }
+      role: user.role,
+      user: {
+        id: user.user_id,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        email: user.email
+      }
     });
 
   } catch (error) {

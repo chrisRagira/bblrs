@@ -18,30 +18,34 @@ const transporter = nodemailer.createTransport({
 export const register = async (req, res) => {
   try {
     const {
-      fullName,
-      email,
-      password,
-      role,
-      nationalId,
-      phoneNumber
-    } = req.body;
+  first_name,
+  middle_name,
+  last_name,
+  email,
+  password,
+  role,
+  national_id,
+  kra_pin,
+  phone_number
+} = req.body;
+console.log(req.body);
 
     // ✅ validation
-    if (!fullName || !email || !password) {
+    if (!first_name || !last_name || !email || !password) {
       return res.status(400).json({
-        message: "Full name, email and password are required"
+        message: "First name, last name, email and password are required"
       });
     }
 
     const hashed = await bcrypt.hash(password, 10);
 
-    const safeRole = role || "LANDOWNER";
+    const safeRole = role || "SELLER/BUYER";
 
     const [result] = await req.db.execute(
       `INSERT INTO users 
-      (full_name, email, password, role,national_id,phone_number) 
-      VALUES (?, ?, ?, ?,?,?)`,
-      [fullName, email, hashed, safeRole, nationalId, phoneNumber]
+      (first_name, middle_name, last_name, email, password, role,national_id,kra_pin,phone_number) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [first_name, middle_name || "", last_name, email, hashed, safeRole, national_id, kra_pin, phone_number]
     );
 
     res.status(201).json({
@@ -50,8 +54,25 @@ export const register = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("🔥 REGISTER ERROR:", err);
-    res.status(500).json({ error: err.message });
+    if (err.code === "ER_DUP_ENTRY") {
+      let message = "Duplicate entry";
+
+      // Detect which field caused the error
+      if (err.sqlMessage.includes("email")) {
+        message = "Email already registered";
+      } else if (err.sqlMessage.includes("national_id")) {
+        message = "National ID already registered";
+      } else if (err.sqlMessage.includes("kra_pin")) {
+        message = "KRA PIN already registered";
+      } else if (err.sqlMessage.includes("phone_number")) {
+        message = "Phone number already registered";
+      }
+
+      return res.status(400).json({ message });
+    }
+
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
   }
 };
 
@@ -62,6 +83,7 @@ export const register = async (req, res) => {
 // ── POST /auth/login ─────────────────────────────────────────────────────────
 export const login = async (req, res) => {
   const { email, password, captcha } = req.body;
+  const requiresMfa = false;
 
   if (!captcha) {
     return res.status(400).json({ message: "Captcha required" });
@@ -79,7 +101,6 @@ export const login = async (req, res) => {
         },
       }
     );
-  console.log(captchaRes.data,process.env.RECAPTCHA_SECRET_KEY,captcha);
 
     if (!captchaRes.data.success) {
       return res.status(400).json({ message: "Captcha verification failed" });
@@ -103,80 +124,53 @@ export const login = async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    const otp     = crypto.randomInt(100000, 999999).toString();
-    const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    if (requiresMfa) {
 
-    await req.db.execute(
-      "UPDATE users SET reset_token = ?, reset_expires = ? WHERE user_id = ?",
-      [otp, expires, user.user_id]
+      const otp     = crypto.randomInt(100000, 999999).toString();
+      const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      await req.db.execute(
+        "UPDATE users SET reset_token = ?, reset_expires = ? WHERE user_id = ?",
+        [otp, expires, user.user_id]
+      );
+
+      await transporter.sendMail({
+        from:    `"BBLRS System" <${process.env.EMAIL_USER}>`,
+        to:      email,
+        subject: "Your Login OTP — BBLRS Kenya",
+        html: `
+          <h3>One-Time Password</h3>
+          <p>Your OTP is: <strong>${otp}</strong></p>
+          <p>This code expires in 10 minutes. Do not share it with anyone.</p>
+        `,
+      });
+
+      return res.json({
+        requiresMfa: requiresMfa,
+        userId: user.user_id,   // frontend needs this to call /auth/mfa/verify
+      });
+    }
+
+    // 5. Create JWT
+    const token = jwt.sign(
+      { userId: user.user_id, role: user.role },
+      "secret",
+      { expiresIn: "1d" }
     );
 
-    await transporter.sendMail({
-      from:    `"BBLRS System" <${process.env.EMAIL_USER}>`,
-      to:      email,
-      subject: "Your Login OTP — BBLRS Kenya",
-      html: `
-        <h3>One-Time Password</h3>
-        <p>Your OTP is: <strong>${otp}</strong></p>
-        <p>This code expires in 10 minutes. Do not share it with anyone.</p>
-      `,
-    });
-
     return res.json({
-      requiresMfa: true,
-      userId: user.user_id,   // frontend needs this to call /auth/mfa/verify
+      token,
+      role: user.role,
+      user: {
+        id: user.user_id,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        email: user.email
+      }
     });
 
   } catch (err) {
     console.error("Login error:", err);
     return res.status(500).json({ message: "Server error. Please try again." });
-  }
-};
-
-// ── POST /auth/mfa/verify ────────────────────────────────────────────────────
-export const verifyMfa = async (req, res) => {
-  const { userId, otp } = req.body;
-
-  try {
-    const [rows] = await req.db.execute(
-      "SELECT * FROM users WHERE user_id = ?",
-      [userId]
-    );
-
-    if (rows.length === 0) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const user = rows[0];
-
-    if (user.reset_token !== otp || new Date() > new Date(user.reset_expires)) {
-      return res.status(401).json({ message: "Invalid or expired OTP" });
-    }
-
-    await req.db.execute(
-      "UPDATE users SET reset_token = NULL, reset_expires = NULL WHERE user_id = ?",
-      [user.user_id]
-    );
-
-    const token = jwt.sign(
-      { id: user.user_id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "8h" }
-    );
-
-    return res.json({
-      requiresMfa: false,
-      token,
-      role: user.role,
-      user: {
-        id:       user.user_id,
-        fullName: user.full_name,
-        email:    user.email,
-      },
-    });
-
-  } catch (err) {
-    console.error("MFA verify error:", err);
-    return res.status(500).json({ message: "Server error" });
   }
 };

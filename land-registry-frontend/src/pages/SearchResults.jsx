@@ -1,21 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect,useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { parcelsApi } from "../api/services";
 import ParcelCard from "../components/ui/ParcelCard";
 import { PageHeader } from "../components/ui/Card";
 import { Spinner, EmptyState } from "../components/ui/Feedback";
 import { C } from "../styles/tokens";
+import Card from "../components/ui/Card";
+import Button from "../components/ui/Button";
 
 const STATUS_FILTERS = ["ALL", "ACTIVE", "ENCUMBERED", "DISPUTED", "INACTIVE"];
 
-// Fallback demo data when API is unavailable
-// const DEMO_PARCELS = [
-//   { parcelID: "a1b2", titleNumber: "KE/NKR/2024/0042", county: "Nakuru",  subCounty: "Nakuru East",    areaHectares: 0.25, landUseType: "RESIDENTIAL",  currentOwner: { fullName: "John Kamau"        }, status: "ACTIVE"     },
-//   { parcelID: "b2c3", titleNumber: "KE/NAI/2023/0180", county: "Nairobi", subCounty: "Westlands",       areaHectares: 0.12, landUseType: "COMMERCIAL",   currentOwner: { fullName: "Acme Ltd."         }, status: "ENCUMBERED" },
-//   { parcelID: "c3d4", titleNumber: "KE/KSM/2022/0099", county: "Kisumu",  subCounty: "Kisumu Central",  areaHectares: 1.80, landUseType: "AGRICULTURAL", currentOwner: { fullName: "Mary Otieno"       }, status: "ACTIVE"     },
-//   { parcelID: "d4e5", titleNumber: "KE/MOM/2024/0015", county: "Mombasa", subCounty: "Mvita",           areaHectares: 0.08, landUseType: "COMMERCIAL",   currentOwner: { fullName: "Coast Developers"  }, status: "DISPUTED"  },
-//   { parcelID: "e5f6", titleNumber: "KE/NAK/2021/0250", county: "Nakuru",  subCounty: "Gilgil",          areaHectares: 4.50, landUseType: "AGRICULTURAL", currentOwner: { fullName: "Samuel Njoroge"    }, status: "ACTIVE"     },
-// ];
 
 export default function SearchResults() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -29,27 +23,55 @@ export default function SearchResults() {
   const [paywall, setPaywall] = useState(false);
   const [phone, setPhone] = useState("");
   const [paymentLoading, setPaymentLoading] = useState(false);
-
+  const [paymentId,      setPaymentId]      = useState(null);
+  const [paymentStatus,  setPaymentStatus]  = useState(null); // PENDING | PAID | FAILED
+  const pollRef = useRef(null);
   const LIMIT = 10;
 
-  const fetchParcels = async () => {
+
+  const startPolling = (id) => {
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await parcelsApi.pollPayStatus(id);
+
+        if (res.data.status === "PAID") {
+          clearInterval(pollRef.current);
+          setPaymentStatus("PAID");
+          setPaywall(false);
+          fetchParcels(id); // pass id directly — state update may not have flushed yet
+        }
+
+        if (res.data.status === "FAILED") {
+          clearInterval(pollRef.current);
+          setPaymentStatus("FAILED");
+        }
+      } catch {
+        clearInterval(pollRef.current);
+      }
+    }, 3000);
+  };
+
+  // Clean up on unmount
+  useEffect(() => () => clearInterval(pollRef.current), []);
+
+
+
+  const fetchParcels = async (explicitPaymentId) => {
     setLoading(true);
     try {
       const res = await parcelsApi.search({
-        q: query,
-        status: status !== "ALL" ? status : undefined,
+        q:         query,
+        status:    status !== "ALL" ? status : undefined,
         page,
-        limit: LIMIT,
+        limit:     LIMIT,
+        // prefer the directly-passed id so we don't rely on stale state
+        paymentId: explicitPaymentId ?? paymentId ?? undefined,
       });
-
       setParcels(res.data.data);
       setTotal(res.data.total);
       setPaywall(false);
-
     } catch (err) {
-      if (err.response?.status === 402) {
-        setPaywall(true);
-      }
+      if (err.response?.status === 402) setPaywall(true);
     } finally {
       setLoading(false);
     }
@@ -123,7 +145,7 @@ export default function SearchResults() {
         />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {parcels.map((p) => <ParcelCard key={p.parcel_id} parcel={p} />)}
+          {parcels.map((p) => <ParcelCard key={p.parcelID} parcel={p} paymentId={paymentId} />)}
         </div>
       )}
 
@@ -160,39 +182,150 @@ export default function SearchResults() {
           >Next →</button>
         </div>
       )}
+
+      {/* Paywall — full-screen overlay modal that covers all content */}
       {paywall && (
-        <Card style={{ marginBottom: 16, border: "2px solid #f0c040" }}>
-          <h3>🔒 Paywall Required</h3>
-          <p>Pay KES 20 to view parcel results</p>
+        <>
+          <style>{`
+            @keyframes pulse    { 0%,100%{opacity:1} 50%{opacity:0.3} }
+            @keyframes modalIn  {
+              from { opacity: 0; transform: translateY(16px) scale(0.97); }
+              to   { opacity: 1; transform: translateY(0)    scale(1);    }
+            }
+          `}</style>
 
-          <input
-            placeholder="07XXXXXXXX"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            style={{ width: "100%", padding: 10, marginBottom: 10 }}
-          />
+          {/* Backdrop — fixed, covers entire viewport, blurs everything beneath */}
+          <div style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
+            background: "rgba(10, 20, 45, 0.60)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}>
+            {/* Modal card */}
+            <div style={{
+              background: "#fff",
+              borderRadius: 16,
+              padding: "32px 28px",
+              width: "100%",
+              maxWidth: 420,
+              boxShadow: "0 24px 64px rgba(0,0,0,0.35)",
+              animation: "modalIn 0.25s ease both",
+            }}>
+              {/* Header */}
+              <div style={{ textAlign: "center", marginBottom: 24 }}>
+                <div style={{
+                  width: 56, height: 56, borderRadius: "50%",
+                  background: C.goldLt,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  margin: "0 auto 14px",
+                  fontSize: 26,
+                  border: `2px solid ${C.gold}`,
+                }}>
+                  🔒
+                </div>
+                <p style={{ fontWeight: 700, color: C.navy, fontSize: 17, marginBottom: 6 }}>
+                  Search requires payment
+                </p>
+                <p style={{ fontSize: 13, color: C.textSecondary, lineHeight: 1.6 }}>
+                  Pay <strong>KES 20</strong> via M-Pesa to unlock these results.
+                  Access is valid for <strong>30 minutes</strong>.
+                </p>
+              </div>
 
-          <Button
-            disabled={paymentLoading}
-            onClick={async () => {
-              setPaymentLoading(true);
-              try {
-                await parcelsApi.mpesaSearchPay({
-                  phone,
-                  query,
-                });
+              {/* Divider */}
+              <div style={{ height: 1, background: C.border, marginBottom: 20 }} />
 
-                alert("STK Push sent. Complete payment on phone.");
-              } finally {
-                setPaymentLoading(false);
-              }
-            }}
-          >
-            Pay with M-Pesa
-          </Button>
-        </Card>
+              {/* Error state */}
+              {paymentStatus === "FAILED" && (
+                <div style={{
+                  background: C.dangerLt, color: C.danger,
+                  padding: "10px 12px", borderRadius: 8,
+                  marginBottom: 16, fontSize: 13,
+                }}>
+                  ⚠️ Payment failed or was cancelled. Please try again.
+                </div>
+              )}
+
+              {/* Pending — waiting for M-Pesa PIN */}
+              {paymentStatus === "PENDING" ? (
+                <div style={{ textAlign: "center", padding: "8px 0 4px" }}>
+                  <div style={{ fontSize: 40, marginBottom: 12 }}>📱</div>
+                  <p style={{ fontWeight: 600, color: C.navy, marginBottom: 6, fontSize: 15 }}>
+                    Check your phone
+                  </p>
+                  <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20, lineHeight: 1.5 }}>
+                    Enter your M-Pesa PIN to complete the KES 20 payment
+                  </p>
+                  <div style={{
+                    display: "flex", alignItems: "center",
+                    justifyContent: "center", gap: 8,
+                  }}>
+                    <div style={{
+                      width: 10, height: 10, borderRadius: "50%",
+                      background: C.teal, animation: "pulse 1.2s infinite",
+                    }} />
+                    <span style={{ fontSize: 13, color: C.teal, fontWeight: 500 }}>
+                      Waiting for payment…
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                /* Phone input + pay button */
+                <>
+                  <label style={{
+                    display: "block", fontSize: 12, fontWeight: 600,
+                    color: C.textSecondary, marginBottom: 6,
+                    letterSpacing: "0.04em", textTransform: "uppercase",
+                  }}>
+                    M-Pesa Phone Number
+                  </label>
+                  <input
+                    placeholder="07XXXXXXXX"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="form-control"
+                    style={{ marginBottom: 14 }}
+                  />
+                  <Button
+                    full
+                    disabled={paymentLoading || !phone}
+                    onClick={async () => {
+                      setPaymentLoading(true);
+                      setPaymentStatus(null);
+                      try {
+                        const res = await parcelsApi.mpesaSearchPay({ phone, query });
+                        setPaymentId(res.data.paymentId);
+                        setPaymentStatus("PENDING");
+                        startPolling(res.data.paymentId);
+                      } catch (err) {
+                        alert(err.response?.data?.message || "Payment initiation failed.");
+                      } finally {
+                        setPaymentLoading(false);
+                      }
+                    }}
+                  >
+                    {paymentLoading ? "Sending STK Push…" : "Pay KES 20 with M-Pesa"}
+                  </Button>
+
+                  <p style={{
+                    fontSize: 11, color: C.textSecondary,
+                    textAlign: "center", marginTop: 12, lineHeight: 1.5,
+                  }}>
+                    You'll receive an STK push prompt on your phone.
+                    No data is stored after your session expires.
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+        </>
       )}
     </div>
-
   );
 }

@@ -25,7 +25,7 @@ export function FormField({
           className={`form-control${icon ? " form-control--icon" : ""}`}
         />
       </div>
-      {helper && <p className="form-helper">{helper}</p>}
+      {helper && <p className="form-helper" style={{color: helper ? "#dc2626":"#6b7280"}}>{helper}</p>}
     </div>
   );
 }

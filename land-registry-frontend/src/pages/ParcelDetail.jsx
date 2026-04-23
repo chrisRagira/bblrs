@@ -97,7 +97,7 @@ export default function ParcelDetail() {
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <Button variant="secondary" small onClick={() => navigate("/verify")}>Verify Document</Button>
-          {isAuthenticated && ["LANDOWNER","LEGAL"].includes(role) && (
+          {isAuthenticated && ["BUYER/SELLER","LEGAL"].includes(role) && (
             <Button small onClick={() => navigate("/transfers/new")}>Initiate Transfer</Button>
           )}
           {role === "REGISTRAR" && (

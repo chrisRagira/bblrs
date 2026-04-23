@@ -61,7 +61,7 @@ function AppRoutes() {
           <Route
             path="/transfer"
             element={
-              <ProtectedRoute roles={["LANDOWNER"]}>
+              <ProtectedRoute roles={["BUYER/SELLER"]}>
                 <TransferForm />
               </ProtectedRoute>
             }
@@ -93,6 +93,11 @@ function AppRoutes() {
               </ProtectedRoute>
             }
           />
+          <Route path="/admin/reports" element={
+            <ProtectedRoute roles={["ADMIN","REGISTRAR"]}>
+              <ReportsDashboard />
+            </ProtectedRoute>
+          } />
 
         </Route>
       </Routes>

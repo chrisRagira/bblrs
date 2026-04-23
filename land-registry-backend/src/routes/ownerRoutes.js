@@ -7,7 +7,7 @@ const router = express.Router();
 router.get(
   "/parcels",
   verifyToken,
-  authorizeRoles("LANDOWNER","LEGAL"),
+  authorizeRoles("BUYER/SELLER","LEGAL"),
   async (req, res) => {
     const userId = req.user.id;
 
@@ -24,7 +24,7 @@ router.get(
 router.post(
   "/transfers",
   verifyToken,
-  authorizeRoles("LANDOWNER"),
+  authorizeRoles("BUYER/SELLER"),
   async (req, res) => {
     const { parcel_id, new_owner_id } = req.body;
 

@@ -20,7 +20,7 @@ import AdminUsers      from "../pages/AdminUsers";
 import NotFound        from "../pages/NotFound";
 import ForgotPassword from "../pages/ForgotPassword";
 import ResetPassword from "../pages/ResetPassword";
-
+import ReportsDashboard from "../pages/ReportsDashboard";
 
 
 export default function AppRouter() {
@@ -47,7 +47,7 @@ export default function AppRouter() {
             } />
 
             <Route path="/transfers/new" element={
-              <ProtectedRoute roles={["LANDOWNER","LEGAL"]}>
+              <ProtectedRoute roles={["BUYER/SELLER","LEGAL"]}>
                 <TransferForm />
               </ProtectedRoute>
             } />
@@ -89,6 +89,12 @@ export default function AppRouter() {
                 <AuditLog />
               </ProtectedRoute>
             } />
+
+            <Route path="/admin/reports" element={
+            <ProtectedRoute roles={["ADMIN","REGISTRAR"]}>
+              <ReportsDashboard />
+            </ProtectedRoute>
+          } />
 
             {/* ── Fallbacks ─────────────────────────────────────── */}
             <Route path="/404" element={<NotFound />} />

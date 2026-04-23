@@ -102,10 +102,10 @@ function getAge(timestamp) {
   return (
     <div className="page-wrapper">
       <PageHeader
-        title={`Welcome, ${user?.fullName?.split(" ")[0] || "User"}`}
+        title={`Welcome, ${user?.first_name || "User"}`}
         subtitle={`${role} · Your land portfolio on the blockchain`}
         action={
-          role === "LANDOWNER" || role === "LEGAL"
+          role === "BUYER/SELLER" || role === "LEGAL"
             ? <Button onClick={() => navigate("/transfers/new")}>+ Initiate Transfer</Button>
             : role === "REGISTRAR"
             ? <Button onClick={() => navigate("/registrar/queue")}>View Approval Queue</Button>
@@ -119,7 +119,7 @@ function getAge(timestamp) {
         <>
           {/* ── Stats ──────────────────────────────────────────── */}
           <div className="grid-4" style={{ marginBottom: 28 }}>
-            <StatCard label="Total Parcels"     value={parcels.length}          icon="🏘" />
+            <StatCard label="My Parcels"     value={parcels.length}          icon="🏘" />
             <StatCard label="Active"            value={activeParcels.length}    icon="✓" />
             <StatCard label="Encumbered"        value={encumberedParcels.length} icon="🔒" />
             <StatCard label="Pending Transfers" value={pending.length}          icon="🔄" accent />

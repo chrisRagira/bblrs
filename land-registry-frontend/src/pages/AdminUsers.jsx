@@ -7,14 +7,14 @@ import Button from "../components/ui/Button";
 import { C, ROLE_COLORS } from "../styles/tokens";
 
 const DEMO_USERS = [
-  { userID:"u1", fullName:"John Kamau",      email:"john@example.com",      role:"LANDOWNER", isActive:true,  nationalId:"12345678", createdAt:"2024-03-15" },
+  { userID:"u1", fullName:"John Kamau",      email:"john@example.com",      role:"BUYER/SELLER", isActive:true,  nationalId:"12345678", createdAt:"2024-03-15" },
   { userID:"u2", fullName:"Officer Wanjiku", email:"wanjiku@lands.go.ke",   role:"REGISTRAR", isActive:true,  nationalId:"87654321", createdAt:"2023-01-10" },
   { userID:"u3", fullName:"Admin Njuguna",   email:"njuguna@lands.go.ke",   role:"ADMIN",     isActive:true,  nationalId:"11223344", createdAt:"2022-06-01" },
   { userID:"u4", fullName:"KCB Bank Kenya",  email:"registry@kcb.co.ke",    role:"FINANCIAL", isActive:true,  nationalId:"INS/001",  createdAt:"2023-08-20" },
   { userID:"u5", fullName:"Advocate Mutua",  email:"mutua@lawfirm.co.ke",   role:"LEGAL",     isActive:false, nationalId:"55667788", createdAt:"2023-03-14" },
 ];
 
-const ALL_ROLES = ["LANDOWNER","REGISTRAR","ADMIN","LEGAL","FINANCIAL","PUBLIC"];
+const ALL_ROLES = ["BUYER/SELLER","REGISTRAR","ADMIN","LEGAL","FINANCIAL","PUBLIC"];
 
 export default function AdminUsers() {
   const [users,    setUsers]    = useState([]);

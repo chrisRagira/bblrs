@@ -10,7 +10,7 @@ router.get("/", verifyToken, async (req, res) => {
      AND is_read = 0
      ORDER BY created_at DESC
      LIMIT 20`,
-    [req.user.id]
+    [req.user.userId]
   );
 
   res.json({ data: rows });

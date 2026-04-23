@@ -22,7 +22,7 @@ app.use((req, res, next) => {
 });
 
 const corsOptions = {
-  origin: "http://34.72.235.128:5173",
+  origin: "http://35.209.144.131:5173",
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true

@@ -7,109 +7,175 @@ import ipfs from "../config/ipfs.js";
 const router = express.Router();
 
 // ─── Public Search ───────────────────────────────────────────────────────────
+import { v4 as uuidv4 } from "uuid";
+import { stkPush }      from "../utils/mpesa.js";
 
-router.get("/search", async (req, res) => {
+const SEARCH_AMOUNT = 1; // KES — use 1 for sandbox testing, 20 for prod
+
+// ── POST /parcels/mpesa-search-pay ──────────────────────────────────────────
+router.post("/mpesa-search-pay", async (req, res) => {
+  const { phone, query } = req.body;
+
+  if (!phone || !query) {
+    return res.status(400).json({ message: "Phone and query are required." });
+  }
+
+  const paymentId = uuidv4();
+
   try {
-    const { q, status, page = 1, limit = 10 } = req.query;
+    const result = await stkPush({
+      phone,
+      amount:      SEARCH_AMOUNT,
+      accountRef:  "BBLRS-SEARCH",
+      description: "Parcel Search Fee",
+      callbackUrl: `${process.env.APP_URL}/api/v1/parcels/mpesa-callback`,
+    });
+    console.log("STK Push initiated:", result);
 
-    // DO NOT SEARCH WITHOUT QUERY
-    if (!q || q.trim() === "") {
-      return res.json({
-        data: [],
-        total: 0,
-        page: parseInt(page),
-        limit: parseInt(limit)
-      });
+    if (result.ResponseCode !== "0") {
+      return res.status(400).json({ message: result.ResponseDescription });
     }
 
-    const offset = (parseInt(page) - 1) * parseInt(limit);
-    const conditions = [];
-    const params = [];
-
-    const like = `%${q}%`;
-    conditions.push(`
-      (
-        p.title_number LIKE ? 
-        OR p.county LIKE ? 
-        OR u.national_id LIKE ?
-      )
-    `);
-    params.push(like, like, like);
-
-    if (status && status !== "ALL") {
-      conditions.push(`p.status = ?`);
-      params.push(status);
-    }
-
-    const where = `WHERE ${conditions.join(" AND ")}`;
-
-    const [[{ total }]] = await req.db.execute(
-      `
-      SELECT COUNT(*) AS total
-      FROM parcels p
-      JOIN users u ON p.owner_id = u.user_id
-      ${where}
-      `,
-      params
+    // Save pending payment
+    await req.db.execute(
+      `INSERT INTO search_payments (id, phone, query, status, checkout_request_id, expires_at)
+      VALUES (?, ?, ?, 'PENDING', ?, DATE_ADD(NOW(), INTERVAL 30 MINUTE))`,
+      [paymentId, phone, query, result.CheckoutRequestID]
     );
 
-    const [rows] = await req.db.execute(
-      `
-      SELECT 
-        p.parcel_id,
-        p.title_number,
-        p.owner_id,
-        p.county,
-        p.sub_county,
-        p.ward,
-        p.status,
-        p.area_hectares,
-        p.land_use_type,
-        p.gps_coordinates,
-        p.blockchain_ref,
+    return res.json({
+      message:   "STK Push sent. Complete payment on your phone.",
+      paymentId,                        // frontend polls with this
+      checkoutRequestId: result.CheckoutRequestID,
+    });
 
-        u.user_id AS owner_user_id,
-        u.full_name AS owner_full_name
-
-      FROM parcels p
-      JOIN users u ON p.owner_id = u.user_id
-      ${where}
-      ORDER BY p.created_at DESC
-      LIMIT ? OFFSET ?
-      `,
-      [...params, parseInt(limit), offset]
-    );
-
-    const data = rows.map(row => ({
-      parcelID: row.parcel_id,
-      titleNumber: row.title_number,
-      ownerID: row.owner_id,
-      county: row.county,
-      subCounty: row.sub_county,
-      ward: row.ward,
-      status: row.status,
-      areaHectares: row.area_hectares,
-      landUseType: row.land_use_type,
-      gpsCoordinates: row.gps_coordinates,
-      blockchainRef: row.blockchain_ref,
-      owner: {
-        userID: row.owner_user_id,
-        fullName: row.owner_full_name
-      }
-    }));
-
-    res.json({ data, total, page: parseInt(page), limit: parseInt(limit) });
-
-  } catch (error) {
-    console.error("Search error:", error);
-    res.status(500).json({ message: "Server error" });
+  } catch (err) {
+    console.error("M-Pesa STK error:", err.response?.data || err.message);
+    return res.status(500).json({ message: "Failed to initiate payment." });
   }
 });
 
-// ─── Get Parcel Details (Public) ─────────────────────────────────────────────
+// ── POST /parcels/mpesa-callback ─────────────────────────────────────────────
+// Safaricom posts here — must be a public HTTPS URL (use ngrok in dev)
+router.post("/mpesa-callback", async (req, res) => {
+  // Always respond 200 immediately — Safaricom retries if you don't
+  res.json({ ResultCode: 0, ResultDesc: "Accepted" });
 
-router.get("/:id", async (req, res) => {
   try {
+    const body     = req.body.Body?.stkCallback;
+    const checkoutId = body?.CheckoutRequestID;
+    const resultCode = body?.ResultCode; // 0 = success, anything else = failed/cancelled
+
+    if (!checkoutId) return;
+
+    const status = resultCode === 0 ? "PAID" : "FAILED";
+
+    await req.db.execute(
+      `UPDATE search_payments SET status = ? WHERE checkout_request_id = ?`,
+      [status, checkoutId]
+    );
+
+    console.log(`Payment ${checkoutId} → ${status}`);
+  } catch (err) {
+    console.error("Callback error:", err.message);
+  }
+});
+
+// ── GET /parcels/mpesa-pay-status/:paymentId ─────────────────────────────────
+// Frontend polls this every 3 seconds to know when payment completes
+router.get("/mpesa-pay-status/:paymentId", async (req, res) => {
+  const { paymentId } = req.params;
+
+  const [rows] = await req.db.execute(
+    `SELECT status, query FROM search_payments WHERE id = ? AND expires_at > NOW()`,
+    [paymentId]
+  );
+
+  if (rows.length === 0) {
+    return res.status(404).json({ message: "Payment not found or expired." });
+  }
+
+  return res.json({ status: rows[0].status, query: rows[0].query });
+});
+
+// ── GET /parcels/search ──────────────────────────────────────────────────────
+// Update your existing search route to check for payment
+router.get("/search", verifyToken, async (req, res) => {
+  const { q, status, page = 1, limit = 10, paymentId } = req.query;
+
+  if (!q || q.trim() === "") {
+    return res.json({ data: [], total: 0, page: parseInt(page), limit: parseInt(limit) });
+  }
+
+  // Registrars bypass payment entirely
+  const isRegistrar = req.user?.role === "REGISTRAR";
+
+  if (!isRegistrar) {
+    if (paymentId) {
+      const [rows] = await req.db.execute(
+        `SELECT status FROM search_payments
+         WHERE id = ? AND query = ? AND expires_at > NOW()`,
+        [paymentId, q.trim()]
+      );
+
+      if (rows.length === 0 || rows[0].status !== "PAID") {
+        return res.status(402).json({ message: "Payment required or not confirmed yet." });
+      }
+    } else {
+      return res.status(402).json({ message: "Payment required to search." });
+    }
+  }
+
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const conditions = [];
+  const params     = [];
+  const like       = `%${q}%`;
+
+  conditions.push(`(p.title_number LIKE ? OR p.county LIKE ? OR u.national_id LIKE ?)`);
+  params.push(like, like, like);
+
+  if (status && status !== "ALL") {
+    conditions.push(`p.status = ?`);
+    params.push(status);
+  }
+
+  const where = `WHERE ${conditions.join(" AND ")}`;
+
+  const [[{ total }]] = await req.db.execute(
+    `SELECT COUNT(*) AS total FROM parcels p JOIN users u ON p.owner_id = u.user_id ${where}`,
+    params
+  );
+
+  const [rows] = await req.db.execute(
+    `SELECT p.parcel_id, p.title_number, p.owner_id, p.county, p.sub_county,
+            p.ward, p.status, p.area_hectares, p.land_use_type,
+            p.gps_coordinates, p.blockchain_ref,
+            u.user_id AS owner_user_id, u.first_name AS owner_first_name, u.last_name AS owner_last_name
+     FROM parcels p JOIN users u ON p.owner_id = u.user_id
+     ${where} ORDER BY p.created_at DESC LIMIT ? OFFSET ?`,
+    [...params, parseInt(limit), offset]
+  );
+
+  const data = rows.map(row => ({
+    parcelID:     row.parcel_id,
+    titleNumber:  row.title_number,
+    county:       row.county,
+    subCounty:    row.sub_county,
+    ward:         row.ward,
+    status:       row.status,
+    areaHectares: row.area_hectares,
+    landUseType:  row.land_use_type,
+    owner:        { userID: row.owner_user_id, firstName: row.owner_first_name, lastName: row.owner_last_name },
+  }));
+
+  res.json({ data, total, page: parseInt(page), limit: parseInt(limit) });
+});
+
+// ─── Get Parcel Details (Payment-gated) ──────────────────────────────────────
+
+router.get("/:id", verifyToken, async (req, res) => {
+  try {
+    // Fetch the parcel first — we need owner_id before we can decide on payment
     const [rows] = await req.db.execute(
       `
       SELECT 
@@ -127,7 +193,8 @@ router.get("/:id", async (req, res) => {
         p.created_at,
 
         u.user_id   AS owner_user_id,
-        u.full_name AS owner_full_name,
+        u.first_name AS owner_first_name,
+        u.last_name AS owner_last_name,
         u.email     AS owner_email
 
       FROM parcels p
@@ -138,31 +205,59 @@ router.get("/:id", async (req, res) => {
     );
 
     if (!rows.length) {
-      return res.json({ message: "Parcel not found" });
+      return res.status(404).json({ message: "Parcel not found" });
     }
 
     const row = rows[0];
 
+    const isRegistrar = req.user?.role === "REGISTRAR";
+    const isOwner     = req.user?.id === row.owner_user_id;
+    console.log("Requester:", req.user);
+    console.log("Parcel Owner ID:", row.owner_user_id);
+    console.log(isRegistrar);
+    console.log(isOwner);
+
+    // Only enforce payment if the requester is neither a registrar nor the owner
+    if (!isRegistrar && !isOwner) {
+      const { paymentId } = req.query;
+
+      if (!paymentId) {
+        return res.status(402).json({ message: "Payment required to view parcel details." });
+      }
+
+      const [payRows] = await req.db.execute(
+        `SELECT id FROM search_payments
+         WHERE id = ? AND status = 'PAID' AND expires_at > NOW()
+         LIMIT 1`,
+        [paymentId]
+      );
+
+      if (!payRows.length) {
+        return res.status(402).json({ message: "Payment required or session expired." });
+      }
+    }
+
     res.json({
       data: {
-        parcelID: row.parcel_id,
-        titleNumber: row.title_number,
-        ownerID: row.owner_id,
-        county: row.county,
-        subCounty: row.sub_county,
-        ward: row.ward,
-        status: row.status,
-        areaHectares: row.area_hectares,
-        landUseType: row.land_use_type,
+        parcelID:       row.parcel_id,
+        titleNumber:    row.title_number,
+        ownerID:        row.owner_id,
+        county:         row.county,
+        subCounty:      row.sub_county,
+        ward:           row.ward,
+        status:         row.status,
+        areaHectares:   row.area_hectares,
+        landUseType:    row.land_use_type,
         gpsCoordinates: row.gps_coordinates,
-        blockchainRef: row.blockchain_ref,
-        createdAt: row.created_at,
+        blockchainRef:  row.blockchain_ref,
+        createdAt:      row.created_at,
         owner: {
-          userID: row.owner_user_id,
-          fullName: row.owner_full_name,
-          email: row.owner_email
-        }
-      }
+          userID:   row.owner_user_id,
+          first_name: row.owner_first_name,
+          last_name: row.owner_last_name,
+          email:    row.owner_email,
+        },
+      },
     });
 
   } catch (error) {
@@ -211,7 +306,7 @@ router.post(
       }
 
       const [users] = await req.db.execute(
-        "SELECT user_id, full_name FROM users WHERE national_id=?",
+        "SELECT user_id, first_name, last_name FROM users WHERE national_id=?",
         [ownerNationalId]
       );
 

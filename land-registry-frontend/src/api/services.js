@@ -19,7 +19,7 @@ export const authApi = {
 // ─── Parcels ─────────────────────────────────────────────────────────────────
 export const parcelsApi = {
   search:     (params)     => api.get("/parcels/search", { params }),
-  getById:    (id)         => api.get(`/parcels/${id}`),
+  getById: (id, params) => api.get(`/parcels/${id}`, { params }),
   getByOwner: (userId) => api.get(`/parcels/owner/${userId}`),
   create:     (data)       => api.post("/parcels", data),
   updateStatus: (id, data) => api.patch(`/parcels/${id}/status`, data),
@@ -30,7 +30,8 @@ export const parcelsApi = {
       headers: { "Content-Type": "multipart/form-data" },
     }),
   mpesaSearchPay: (data) =>
-  api.post("/mpesa/search-pay", data),
+  api.post("/parcels/mpesa-search-pay", data),
+  pollPayStatus: (paymentId) => api.get(`/parcels/mpesa-pay-status/${paymentId}`),
 };
 
 // ─── Transfers ───────────────────────────────────────────────────────────────
@@ -60,6 +61,7 @@ export const adminApi = {
   revokeRole:     (id, roleId)   => api.delete(`/admin/users/${id}/roles/${roleId}`),
   deactivateUser: (id)           => api.patch(`/admin/users/${id}/deactivate`),
   getAuditLog:    (params)       => api.get("/admin/audit", { params }),
+  getReports:    (params)       => api.get("/admin/reports", { params }),
   getReport:      (params)       => api.get("/admin/reports/transactions", { params }),
 };
 

@@ -6,8 +6,8 @@ import { C } from "../../styles/tokens";
 const NAV_LINKS = [
   { label: "Search",          to: "/search",                  roles: null },
   { label: "Verify",          to: "/verify",                  roles: null },
-  { label: "Dashboard",       to: "/dashboard",               roles: ["LANDOWNER","REGISTRAR","ADMIN","LEGAL","FINANCIAL"] },
-  { label: "Initiate Transfer", to: "/transfers/new",         roles: ["LANDOWNER","LEGAL"] },
+  { label: "Dashboard",       to: "/dashboard",               roles: ["BUYER/SELLER","REGISTRAR","ADMIN","LEGAL","FINANCIAL"] },
+  { label: "Initiate Transfer", to: "/transfers/new",         roles: ["BUYER/SELLER","LEGAL"] },
   { label: "Approval Queue",  to: "/registrar/queue",         roles: ["REGISTRAR"] },
   { label: "Register Parcel", to: "/registrar/parcels/new",   roles: ["REGISTRAR"] },
   { label: "Encumbrances",    to: "/registrar/encumbrances",  roles: ["REGISTRAR","FINANCIAL"] },
@@ -30,8 +30,8 @@ export default function Navbar() {
     navigate("/");
   };
 
-  const initials = user?.fullName
-    ? user.fullName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
+  const initials = user?.first_name && user?.last_name
+    ? `${user.first_name[0]}${user.last_name[0]}`.toUpperCase()
     : "?";
 
   return (
@@ -100,7 +100,7 @@ export default function Navbar() {
                 {initials}
               </div>
               <div>
-                <p style={{ color: "#fff", fontSize: 13, fontWeight: 500, lineHeight: 1.2 }}>{user?.fullName || "User"}</p>
+                <p style={{ color: "#fff", fontSize: 13, fontWeight: 500, lineHeight: 1.2 }}>{`${user?.first_name} ${user?.last_name}` || "User"}</p>
                 <p style={{ color: "#64748B", fontSize: 11 }}>{role}</p>
               </div>
               <button onClick={handleLogout} style={{

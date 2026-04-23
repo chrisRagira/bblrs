@@ -19,13 +19,15 @@ router.get(
           p.ward, p.area_hectares, p.land_use_type,
 
           prev.user_id        AS prev_owner_id,
-          prev.full_name      AS prev_owner_name,
+          prev.first_name     AS prev_owner_first_name,
+          prev.last_name      AS prev_owner_last_name,
           prev.national_id    AS prev_owner_national_id,
           prev.email          AS prev_owner_email,
           prev.phone_number   AS prev_owner_phone,
 
           new_o.user_id       AS new_owner_id,
-          new_o.full_name     AS new_owner_name,
+          new_o.first_name    AS new_owner_first_name,
+          new_o.last_name     AS new_owner_last_name,
           new_o.national_id   AS new_owner_national_id,
           new_o.email         AS new_owner_email,
           new_o.phone_number  AS new_owner_phone

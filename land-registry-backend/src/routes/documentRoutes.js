@@ -9,7 +9,7 @@ const router = express.Router();
 router.post(
   "/upload",
   verifyToken,
-  authorizeRoles("LANDOWNER"),
+  authorizeRoles("BUYER/SELLER"),
   upload.single("file"),
   uploadDocument
 );

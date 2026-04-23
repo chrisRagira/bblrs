@@ -75,15 +75,15 @@ router.get("/", verifyToken, async (req, res) => {
   try {
     const [rows] = await req.db.execute(
       `SELECT t.*, p.title_number, p.county,
-              s.full_name AS prev_owner_name,
-              b.full_name AS new_owner_name
+              s.first_name AS prev_owner_first_name, s.last_name AS prev_owner_last_name,
+              b.first_name AS new_owner_first_name, b.last_name AS new_owner_last_name
        FROM transfers t
        JOIN parcels p ON t.parcel_id = p.parcel_id
        JOIN users s   ON t.previous_owner_id = s.user_id
        JOIN users b   ON t.new_owner_id  = b.user_id
        WHERE t.status = 'PENDING' AND (t.previous_owner_id = ? OR t.new_owner_id = ?)
        ORDER BY t.transferred_at DESC`,
-      [req.user.id, req.user.id]
+      [req.user.userId, req.user.userId]
     );
 
     return res.status(200).json({ data: rows });
@@ -98,8 +98,8 @@ router.get("/:id", verifyToken, async (req, res) => {
   try {
     const [rows] = await req.db.execute(
       `SELECT t.*, p.title_number, p.county,
-              s.full_name AS seller_name,
-              b.full_name AS buyer_name
+              s.first_name AS seller_first_name, s.last_name AS seller_last_name,
+              b.first_name AS buyer_first_name, b.last_name AS buyer_last_name
        FROM transfers t
        JOIN parcels p ON t.parcel_id = p.parcel_id
        JOIN users s   ON t.previous_owner_id = s.id
