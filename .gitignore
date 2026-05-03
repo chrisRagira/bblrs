@@ -137,3 +137,5 @@ fabric-samples/
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+land-registry-frontend/kubo_v0.40.1_linux-amd64.tar.gz
+ipfs-desktop-0.48.0-linux-amd64.deb
