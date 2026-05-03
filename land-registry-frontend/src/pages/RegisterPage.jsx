@@ -8,9 +8,13 @@ import Button from "../components/ui/Button";
 import { C, font } from "../styles/tokens";
 
 const ROLE_OPTIONS = [
-  { value: "BUYER/SELLER", label: "Buyer/Seller" },
-  { value: "LEGAL", label: "Legal Officer" },
-  { value: "REGISTRAR", label: "Registrar" },
+  { value: "BUYER_SELLER", label: "Buyer/Seller" },
+  { value: "REGISTRAR", label: "Land Registrar" },
+  { value: "VALUER", label: "Government Valuer" },
+  { value: "LAND_CONTROL_BOARD", label: "Land Control Board Officer" },
+  { value: "SURVEYOR", label: "Surveyor" },
+  { value: "ADVOCATE", label: "Advocate (Lawyer)" },
+  { value: "COUNTY_OFFICER", label: "County Government Officer" },
 ];
 
 const STEPS = ["Personal Info", "Account Setup", "Confirmation"];

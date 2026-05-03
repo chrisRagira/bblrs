@@ -3,7 +3,6 @@ import upload from "../middleware/upload.js";
 import { verifyToken, authorizeRoles } from "../middleware/authMiddleware.js";
 import { submitTx, evaluateTx } from "../fabric.js";
 import ipfs from "../config/ipfs.js";
-
 const router = express.Router();
 
 // ─── Public Search ───────────────────────────────────────────────────────────
@@ -322,6 +321,8 @@ router.post(
         cid = result.path;
       }
 
+      console.log(req)
+
       const { txId } = await submitTx(
         "createParcel",
         titleNumber,
@@ -333,7 +334,7 @@ router.post(
         JSON.stringify(gpsCoordinates || {}),
         ownerNationalId,
         registrationDate || "",
-        req.user.id.toString(),
+        req.user.userId.toString(),
         cid || ""
       );
 
@@ -368,7 +369,7 @@ router.post(
         `INSERT INTO audit_logs 
         (entity, entity_id, action, actor_id, blockchain_ref)
         VALUES (?, ?, ?, ?, ?)`,
-        ["PARCEL", titleNumber, "CREATE_WITH_DOC", req.user.id, txId]
+        ["PARCEL", titleNumber, "CREATE_WITH_DOC", req.user.userId, txId]
       );
 
       return res.status(201).json({
@@ -482,6 +483,80 @@ router.get("/owner/:id", async (req, res) => {
     console.error("Parcel fetch error:", error);
     res.status(500).json({ message: "Server error" });
   }
+});
+
+// GET /parcels/:id/search-certificate
+router.get("/:id/seach-cetificate", async (req, res) => {
+  const { id } = req.params;
+
+  const [[parcel]] = await req.db.execute(
+    `SELECT p.*, u.full_name AS owner_name, u.national_id AS owner_national_id
+     FROM parcels p JOIN users u ON u.user_id = p.owner_id
+     WHERE p.parcel_id = ?`,
+    [id]
+  );
+
+  if (!parcel) return res.status(404).json({ message: "Parcel not found." });
+
+  const [encumbrances] = await req.db.execute(
+    `SELECT * FROM encumbrances WHERE parcel_id = ? AND status = 'ACTIVE'`,
+    [id]
+  );
+
+  // Return structured certificate data
+  // Frontend renders this as a printable PDF
+  return res.json({
+    certificateNo:   `SRCH-${Date.now()}`,
+    issuedAt:        new Date().toISOString(),
+    issuedBy:        req.user.fullName,
+    parcel,
+    encumbrances,
+    hasEncumbrances: encumbrances.length > 0,
+    blockchainRef:   parcel.blockchain_ref,
+    // Blockchain proof: verifiable on-chain
+    verificationUrl: `${process.env.APP_URL}/verify?parcel=${id}`,
+  });
+});
+
+// POST /consents — Registrar logs consent application
+router.post("/consents", verifyToken, authorizeRoles("REGISTRAR"), async (req, res) => {
+  const { transferId, consentType, scheduledDate } = req.body;
+
+  const consentId = uuidv4();
+  await req.db.execute(
+    `INSERT INTO consent_requests
+       (consent_id, transfer_id, parcel_id, consent_type, scheduled_date)
+     SELECT ?, parcel_id, parcel_id, ?, ?
+     FROM transfers WHERE transfer_id = ?`,
+    [consentId, consentType, scheduledDate, transferId]
+  );
+
+  res.status(201).json({ consentId, message: "Consent application recorded." });
+});
+
+// PATCH /consents/:id — Record LCB outcome
+router.patch("/consents/:id", verifyToken, authorizeRoles("REGISTRAR"), async (req, res) => {
+  const { status, grantedBy, refusalReason } = req.body;
+
+  await req.db.execute(
+    `UPDATE consent_requests
+     SET status = ?, granted_by = ?, refusal_reason = ?, resolved_at = NOW()
+     WHERE consent_id = ?`,
+    [status, grantedBy, refusalReason, req.params.id]
+  );
+
+  // If refused, also reject the transfer
+  if (status === "REFUSED") {
+    await req.db.execute(
+      `UPDATE transfers t
+       JOIN consent_requests c ON c.transfer_id = t.transfer_id
+       SET t.status = 'REJECTED', t.rejection_reason = ?
+       WHERE c.consent_id = ?`,
+      [`LCB consent refused: ${refusalReason}`, req.params.id]
+    );
+  }
+
+  res.json({ message: `Consent ${status.toLowerCase()}.` });
 });
 
 export default router;

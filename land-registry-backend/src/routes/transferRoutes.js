@@ -15,7 +15,7 @@ router.post("/", verifyToken, async (req, res) => {
     // Check parcel exists and belongs to current user
     const [parcels] = await req.db.execute(
       "SELECT * FROM parcels WHERE parcel_id = ? AND owner_id = ?",
-      [parcelID, req.user.id]
+      [parcelID, req.user.userId]
     );
 
     if (!parcels.length) {
@@ -49,11 +49,10 @@ router.post("/", verifyToken, async (req, res) => {
     // Create transfer record
     const [result] = await req.db.execute(
       `INSERT INTO transfers 
-        (parcel_id, previous_owner_id, new_owner_id, transfer_type, sale_price, ipfs_cid, blockchain_ref, status, transferred_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', NOW())`,
-      [parcelID, req.user.id, buyer.user_id, transferType, salePriceKES || 0, ipfsCid || ' ', blockchainRef || ' ']
+        (parcel_id, previous_owner_id, new_owner_id, transfer_type, sale_price_kes, ipfs_cid, blockchain_ref, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', NOW())`,
+      [parcelID, req.user.userId, buyer.user_id, transferType, salePriceKES || 0, ipfsCid || null, blockchainRef || null]
     );
-
     return res.status(201).json({
       message: "Transfer request initiated successfully",
       data: {
@@ -102,11 +101,12 @@ router.get("/:id", verifyToken, async (req, res) => {
               b.first_name AS buyer_first_name, b.last_name AS buyer_last_name
        FROM transfers t
        JOIN parcels p ON t.parcel_id = p.parcel_id
-       JOIN users s   ON t.previous_owner_id = s.id
-       JOIN users b   ON t.new_owner_id  = b.id
+       JOIN users s   ON t.previous_owner_id = s.user_id
+       JOIN users b   ON t.new_owner_id  = b.useid
        WHERE t.transfer_id = ? AND (t.previous_owner_id = ? OR t.new_owner_id = ?)`,
-      [req.params.id, req.user.id, req.user.id]
+      [req.params.id, req.user.userId, req.user.userId]
     );
+
 
     if (!rows.length) {
       return res.status(404).json({ message: "Transfer not found" });
@@ -137,6 +137,36 @@ router.post("/:id/approve", verifyToken, async (req, res) => {
     if (transfer.status !== "PENDING") {
       return res.status(400).json({ message: "Transfer already processed" });
     }
+
+  
+  // Document gate — nothing moves without these
+  const missing = [];
+  if (!transfer.stamp_duty_receipt)   missing.push("Stamp duty receipt");
+  if (!transfer.valuation_certificate) missing.push("Valuation certificate");
+
+  // Check consent was granted for agricultural land
+  const [[parcel]] = await req.db.execute(
+    `SELECT land_use_type FROM parcels WHERE parcel_id = ?`, [transfer.parcel_id]
+  );
+
+  if (parcel.land_use_type === "AGRICULTURAL") {
+    const [[consent]] = await req.db.execute(
+      `SELECT status FROM consent_requests
+       WHERE transfer_id = ? AND consent_type = 'LCB'
+       ORDER BY created_at DESC LIMIT 1`,
+      [transfer.transfer_id]
+    );
+    if (!consent || consent.status !== "GRANTED") {
+      missing.push("LCB consent");
+    }
+  }
+
+  if (missing.length > 0) {
+    return res.status(422).json({
+      message: "Cannot approve — missing required documents.",
+      missing,
+    });
+  }
 
     // ✅ Update transfer
     await req.db.execute(
@@ -223,6 +253,37 @@ router.post("/:id/reject", verifyToken, async (req, res) => {
     console.error("Reject error:", err);
     return res.status(500).json({ message: "Internal server error" });
   }
+});
+
+// post /transfers/:id/valuation — Registrar records valuation outcome
+router.post("/transfers/:id/valuation", verifyToken, authorizeRoles("REGISTRAR"), async (req, res) => {
+  const { valuationKES, stampDutyKES, stampDutyReceipt, valuationCertCID } = req.body;
+
+  // Calculate expected stamp duty (4% urban, 2% rural)
+  const [[parcel]] = await req.db.execute(
+    `SELECT p.county FROM transfers t JOIN parcels p ON p.parcel_id = t.parcel_id
+     WHERE t.transfer_id = ?`, [req.params.id]
+  );
+
+  const URBAN_COUNTIES = ["Nairobi","Mombasa","Kisumu","Nakuru","Eldoret"];
+  const rate      = URBAN_COUNTIES.includes(parcel.county) ? 0.04 : 0.02;
+  const expected  = Math.round(valuationKES * rate);
+
+  if (stampDutyKES < expected) {
+    return res.status(422).json({
+      message: `Stamp duty KES ${stampDutyKES.toLocaleString()} is below the required KES ${expected.toLocaleString()} (${rate * 100}% of KES ${valuationKES.toLocaleString()}).`,
+    });
+  }
+
+  await req.db.execute(
+    `UPDATE transfers
+     SET valuation_kes = ?, stamp_duty_kes = ?,
+         stamp_duty_receipt = ?, valuation_certificate = ?
+     WHERE transfer_id = ?`,
+    [valuationKES, stampDutyKES, stampDutyReceipt, valuationCertCID, req.params.id]
+  );
+
+  res.json({ message: "Valuation and stamp duty recorded." });
 });
 
 

@@ -10,6 +10,7 @@ import SearchResults   from "../pages/SearchResults";
 import ParcelDetail    from "../pages/ParcelDetail";
 import Dashboard       from "../pages/Dashboard";
 import TransferForm    from "../pages/TransferForm";
+import LandTransfer   from "../pages/LandTransfer";
 import RegistrarQueue  from "../pages/RegistrarQueue";
 import RegisterParcel  from "../pages/RegisterParcel";
 import EncumbranceManager from "../pages/EncumbranceManager";
@@ -18,10 +19,10 @@ import DocumentVerifier from "../pages/DocumentVerifier";
 import AuditLog        from "../pages/AuditLog";
 import AdminUsers      from "../pages/AdminUsers";
 import NotFound        from "../pages/NotFound";
+// 👇 Add these missing imports
 import ForgotPassword from "../pages/ForgotPassword";
 import ResetPassword from "../pages/ResetPassword";
 import ReportsDashboard from "../pages/ReportsDashboard";
-
 
 export default function AppRouter() {
   return (
@@ -33,6 +34,7 @@ export default function AppRouter() {
             <Route path="/"        element={<LandingPage />} />
             <Route path="/login"   element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            {/* 👇 Add these missing public routes */}
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password/:token" element={<ResetPassword />} />
             <Route path="/search"  element={<SearchResults />} />
@@ -49,6 +51,12 @@ export default function AppRouter() {
             <Route path="/transfers/new" element={
               <ProtectedRoute roles={["BUYER/SELLER","LEGAL"]}>
                 <TransferForm />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/transfers/initiate" element={
+              <ProtectedRoute roles={["BUYER/SELLER","LEGAL","REGISTRAR"]}>
+                <LandTransfer />
               </ProtectedRoute>
             } />
 
@@ -90,11 +98,12 @@ export default function AppRouter() {
               </ProtectedRoute>
             } />
 
+            {/* 👇 Add this missing admin route */}
             <Route path="/admin/reports" element={
-            <ProtectedRoute roles={["ADMIN","REGISTRAR"]}>
-              <ReportsDashboard />
-            </ProtectedRoute>
-          } />
+              <ProtectedRoute roles={["ADMIN","REGISTRAR"]}>
+                <ReportsDashboard />
+              </ProtectedRoute>
+            } />
 
             {/* ── Fallbacks ─────────────────────────────────────── */}
             <Route path="/404" element={<NotFound />} />

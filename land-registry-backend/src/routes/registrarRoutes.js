@@ -52,34 +52,6 @@ router.get(
   }
 );
 
-// Approve transfer
-router.post(
-  "/transfers/:id/approve",
-  verifyToken,
-  authorizeRoles("REGISTRAR"),
-  async (req, res) => {
-    await req.db.execute(
-      "UPDATE transfers SET status='APPROVED' WHERE transfer_id=?",
-      [req.params.id]
-    );
 
-    res.json({ message: "Transfer approved" });
-  }
-);
-
-// Reject transfer
-router.post(
-  "/transfers/:id/reject",
-  verifyToken,
-  authorizeRoles("REGISTRAR"),
-  async (req, res) => {
-    await req.db.execute(
-      "UPDATE transfers SET status='REJECTED' WHERE transfer_id=?",
-      [req.params.id]
-    );
-
-    res.json({ message: "Transfer rejected" });
-  }
-);
 
 export default router;
