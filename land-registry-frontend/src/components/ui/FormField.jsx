@@ -1,7 +1,7 @@
 /** Text / number / email / password / date input */
 export function FormField({
   label, name, type = "text", placeholder,
-  value, onChange, required,
+  value, onChange,onBlur, required,
   helper, icon, className = "",
 }) {
   return (
@@ -21,6 +21,7 @@ export function FormField({
           placeholder={placeholder}
           value={value}
           onChange={onChange}
+          onBlur={onBlur}
           required={required}
           className={`form-control${icon ? " form-control--icon" : ""}`}
         />

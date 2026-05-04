@@ -49,7 +49,7 @@ router.post("/", verifyToken, async (req, res) => {
     // Create transfer record
     const [result] = await req.db.execute(
       `INSERT INTO transfers 
-        (parcel_id, previous_owner_id, new_owner_id, transfer_type, sale_price_kes, ipfs_cid, blockchain_ref, status, created_at)
+        (parcel_id, previous_owner_id, new_owner_id, transfer_type, sale_price, ipfs_cid, blockchain_ref, status, transferred_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', NOW())`,
       [parcelID, req.user.userId, buyer.user_id, transferType, salePriceKES || 0, ipfsCid || null, blockchainRef || null]
     );

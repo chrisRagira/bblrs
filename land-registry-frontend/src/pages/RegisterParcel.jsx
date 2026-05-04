@@ -8,6 +8,7 @@ import { Card } from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import { C, font } from "../styles/tokens";
 import { useRef } from "react";
+import { usersApi } from "../api/services";
 
 const KENYAN_COUNTIES = [
   "Baringo","Bomet","Bungoma","Busia","Elgeyo-Marakwet","Embu","Garissa",
@@ -51,6 +52,8 @@ export default function RegisterParcel() {
   const [docFile,    setDocFile]    = useState(null);
   const [docType,    setDocType]    = useState("TITLE_DEED");
   const [dragActive, setDragActive] = useState(false);
+  const [ownerLookupLoading, setOwnerLookupLoading] = useState(false);
+  const [ownerLookupError,   setOwnerLookupError]   = useState("");
 
   const setL = (f) => (e) => setLocation((s) => ({ ...s, [f]: e.target.value }));
   const setO = (f) => (e) => setOwnership((s) => ({ ...s, [f]: e.target.value }));
@@ -63,6 +66,30 @@ export default function RegisterParcel() {
     setDragActive(false);
     const file = e.dataTransfer.files[0];
     if (file) setDocFile(file);
+  };
+
+  const handleOwnerIdBlur = async () => {
+    const id = ownership.ownerNationalId.trim();
+    if (!id) return;
+
+    setOwnerLookupLoading(true);
+    setOwnerLookupError("");
+    try {
+      const res = await usersApi.getByNationalId(id);
+      const u   = res.data.data;                          // { user_id, first_name, last_name, … }
+      setOwnership((s) => ({
+        ...s,
+        ownerFullName: `${u.first_name} ${u.last_name}`,
+      }));
+    } catch (err) {
+      const msg = err.response?.status === 404
+        ? "No user found with that ID."
+        : "Lookup failed — enter name manually.";
+      setOwnerLookupError(msg);
+      setOwnership((s) => ({ ...s, ownerFullName: "" }));
+    } finally {
+      setOwnerLookupLoading(false);
+    }
   };
 
   const submittingRef = useRef(false);
@@ -241,16 +268,30 @@ export default function RegisterParcel() {
             </h3>
 
             <FormField
-              label="Owner's National ID" name="ownerNationalId"
+              label="Owner's National ID"
+              name="ownerNationalId"
               placeholder="12345678"
-              value={ownership.ownerNationalId} onChange={setO("ownerNationalId")}
-              helper="The owner must be a registered user in the BBLRS system."
+              value={ownership.ownerNationalId}
+              onChange={(e) => {
+                setO("ownerNationalId")(e);
+                setOwnerLookupError("");          // clear stale error on re-type
+                setOwnership((s) => ({ ...s, ownerFullName: "" })); // clear stale name
+              }}
+              onBlur={handleOwnerIdBlur}
+              helper={
+                ownerLookupLoading ? "Looking up user…"
+                : ownerLookupError  ? ownerLookupError
+                : "Tab out to auto-fill owner name."
+              }
               required
             />
             <FormField
-              label="Owner's Full Name" name="ownerFullName"
-              placeholder="John Kamau"
-              value={ownership.ownerFullName} onChange={setO("ownerFullName")}
+              label="Owner's Full Name"
+              name="ownerFullName"
+              placeholder={ownerLookupLoading ? "Fetching…" : "Auto-filled or enter manually"}
+              value={ownership.ownerFullName}
+              onChange={setO("ownerFullName")}
+              readOnly
               required
             />
             <FormField
@@ -259,9 +300,11 @@ export default function RegisterParcel() {
               required
             />
             <FormField
-              label="Registrar National ID" name="registrarNationalId"
-              placeholder="Your national ID"
-              value={ownership.registrarNationalId} onChange={setO("registrarNationalId")}
+              label="Registrar  ID"
+              name="registrarNationalId"
+              placeholder="Your  ID"
+              value={user.id}
+              readOnly
               required
             />
 

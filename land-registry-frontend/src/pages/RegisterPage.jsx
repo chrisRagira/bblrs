@@ -8,8 +8,9 @@ import Button from "../components/ui/Button";
 import { C, font } from "../styles/tokens";
 
 const ROLE_OPTIONS = [
-  { value: "BUYER_SELLER", label: "Buyer/Seller" },
+  { value: "BUYER/SELLER", label: "Buyer/Seller" },
   { value: "REGISTRAR", label: "Land Registrar" },
+  { value: 'CLERK', label: 'Clerk'},
   { value: "VALUER", label: "Government Valuer" },
   { value: "LAND_CONTROL_BOARD", label: "Land Control Board Officer" },
   { value: "SURVEYOR", label: "Surveyor" },

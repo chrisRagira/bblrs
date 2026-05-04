@@ -108,6 +108,7 @@ router.get("/search", verifyToken, async (req, res) => {
 
   // Registrars bypass payment entirely
   const isRegistrar = req.user?.role === "REGISTRAR";
+  console.log(isRegistrar)
 
   if (!isRegistrar) {
     if (paymentId) {
@@ -210,7 +211,7 @@ router.get("/:id", verifyToken, async (req, res) => {
     const row = rows[0];
 
     const isRegistrar = req.user?.role === "REGISTRAR";
-    const isOwner     = req.user?.id === row.owner_user_id;
+    const isOwner     = req.user?.userId === row.owner_user_id;
     console.log("Requester:", req.user);
     console.log("Parcel Owner ID:", row.owner_user_id);
     console.log(isRegistrar);
@@ -255,6 +256,7 @@ router.get("/:id", verifyToken, async (req, res) => {
           first_name: row.owner_first_name,
           last_name: row.owner_last_name,
           email:    row.owner_email,
+          nationalId:    row.owner_national_id,
         },
       },
     });
@@ -270,7 +272,7 @@ router.get("/:id", verifyToken, async (req, res) => {
 router.post(
   "/",
   verifyToken,
-  authorizeRoles("REGISTRAR"),
+  authorizeRoles("REGISTRAR",'CLERK'),
   upload.single("document"),
   async (req, res) => {
     try {
@@ -408,9 +410,29 @@ router.get("/:id/history", async (req, res) => {
     const raw = await evaluateTx("getOwnershipHistory", titleNumber);
     const history = JSON.parse(raw);
 
-    res.json({
-      data: history
-    });
+    // res.json({
+    //   data: history
+    // });
+
+    try {
+      const [rows] = await req.db.execute(
+        `SELECT t.*, p.title_number, p.county,
+                s.first_name AS prev_owner_first_name, s.last_name AS prev_owner_last_name,
+                b.first_name AS new_owner_first_name, b.last_name AS new_owner_last_name
+        FROM transfers t
+        JOIN parcels p ON t.parcel_id = p.parcel_id
+        JOIN users s   ON t.previous_owner_id = s.user_id
+        JOIN users b   ON t.new_owner_id  = b.user_id
+        WHERE t.status = 'APPROVED' AND (t.parcel_id = ? )
+        ORDER BY t.transferred_at DESC`,
+        [req.params.id]
+      );
+
+      return res.status(200).json({ data: rows });
+    } catch (err) {
+      console.error("Fetch transfers error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
 
   } catch (err) {
     console.error("History error:", err);

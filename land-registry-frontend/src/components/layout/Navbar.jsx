@@ -6,11 +6,11 @@ import { C } from "../../styles/tokens";
 const NAV_LINKS = [
   { label: "Search",          to: "/search",                  roles: null },
   { label: "Verify",          to: "/verify",                  roles: null },
-  { label: "Dashboard",       to: "/dashboard",               roles: ["BUYER/SELLER","REGISTRAR","ADMIN","LEGAL","FINANCIAL"] },
-  { label: "Initiate Transfer", to: "/transfers/new",         roles: ["BUYER/SELLER","LEGAL"] },
+  { label: "Dashboard",       to: "/dashboard",               roles: ["BUYER/SELLER","REGISTRAR","ADMIN","LEGAL","FINANCE",'CLERK','VALUER','LAND_CONTROL_BOARD','SURVEYOR','ADVOCATE','COUNTY_OFFICER'] },
+  { label: "Initiate Transfer", to: "/transfers/new",         roles: ["BUYER/SELLER","LEGAL",] },
   { label: "Approval Queue",  to: "/registrar/queue",         roles: ["REGISTRAR"] },
-  { label: "Register Parcel", to: "/registrar/parcels/new",   roles: ["REGISTRAR"] },
-  { label: "Encumbrances",    to: "/registrar/encumbrances",  roles: ["REGISTRAR","FINANCIAL"] },
+  { label: "Register Parcel", to: "/registrar/parcels/new",   roles: ["REGISTRAR",'CLERK'] },
+  { label: "Encumbrances",    to: "/registrar/encumbrances",  roles: ["REGISTRAR","FINANCE"] },
   { label: "Users",           to: "/admin/users",             roles: ["ADMIN"] },
   { label: "Audit Log",       to: "/admin/audit",             roles: ["ADMIN","REGISTRAR"] },
 ];

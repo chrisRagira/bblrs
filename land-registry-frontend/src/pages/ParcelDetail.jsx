@@ -161,11 +161,13 @@ export default function ParcelDetail() {
                   background: C.tealLt, display: "flex", alignItems: "center",
                   justifyContent: "center", fontSize: 15, fontWeight: 600, color: C.teal,
                 }}>
-                  {parcel.owner?.fullName?.split(" ").map(n => n[0]).join("").slice(0,2)}
+                  {parcel.owner?.first_name && parcel.owner?.last_name
+                    ? `${parcel.owner.first_name[0]}${parcel.owner.last_name[0]}`.toUpperCase()
+                    : "?"}
                 </div>
                 <div>
-                  <p style={{ fontWeight: 600, color: C.navy }}>{parcel.owner?.fullName}</p>
-                  <p style={{ fontSize: 12, color: C.textSecondary }}>ID: {parcel.owner?.nationalId}</p>
+                  <p style={{ fontWeight: 600, color: C.navy }}>{`${parcel.owner.first_name} ${parcel.owner.last_name}`}</p>
+                  <p style={{ fontSize: 12, color: C.textSecondary }}>ID: {parcel.owner?.userID}</p>
                 </div>
               </div>
             </Card>
