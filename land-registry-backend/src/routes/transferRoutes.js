@@ -1054,4 +1054,119 @@ async function notifyNextStage(conn, transfer, toStatus) {
 }
 
 
+
+
+// ─────────────────────────────────────────────
+// GET /api/v1/transfers/:id/documents
+// List all documents attached to a transfer
+// ─────────────────────────────────────────────
+router.get("/:id/documents", verifyToken, async (req, res) => {
+  try {
+    // Verify caller has access to this transfer
+    const [[transfer]] = await req.db.execute(
+      `SELECT transfer_id, previous_owner_id, new_owner_id, advocate_id, surveyor_id
+       FROM transfers WHERE transfer_id = ?`,
+      [req.params.id]
+    );
+
+    if (!transfer) {
+      return res.status(404).json({ message: "Transfer not found" });
+    }
+
+    const officialRoles = ["REGISTRAR", "CLERK", "VALUER", "COUNTY_OFFICER", "LCB_OFFICER"];
+    const isParty       = [
+      transfer.previous_owner_id,
+      transfer.new_owner_id,
+      transfer.advocate_id,
+      transfer.surveyor_id,
+    ].includes(req.user.userId);
+    const isOfficial    = officialRoles.includes(req.user.role);
+
+    if (!isParty && !isOfficial) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    // Return metadata only — no file_data blob in the list
+    const [docs] = await req.db.execute(
+      `SELECT doc_id, transfer_id, document_role, original_filename,
+              mime_type, size_bytes, ipfs_cid, created_at
+       FROM transfer_documents
+       WHERE transfer_id = ?
+       ORDER BY created_at ASC`,
+      [req.params.id]
+    );
+
+    return res.json({ data: docs });
+  } catch (err) {
+    console.error("List documents error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+
+// ─────────────────────────────────────────────
+// GET /api/v1/transfers/:id/documents/:docId
+// Stream a single document's binary content
+// ─────────────────────────────────────────────
+router.get("/:id/documents/:docId", verifyToken, async (req, res) => {
+  try {
+    // Verify caller has access to the parent transfer
+    const [[transfer]] = await req.db.execute(
+      `SELECT transfer_id, previous_owner_id, new_owner_id, advocate_id, surveyor_id
+       FROM transfers WHERE transfer_id = ?`,
+      [req.params.id]
+    );
+
+    if (!transfer) {
+      return res.status(404).json({ message: "Transfer not found" });
+    }
+
+    const officialRoles = ["REGISTRAR", "CLERK", "VALUER", "COUNTY_OFFICER", "LCB_OFFICER"];
+    const isParty       = [
+      transfer.previous_owner_id,
+      transfer.new_owner_id,
+      transfer.advocate_id,
+      transfer.surveyor_id,
+    ].includes(req.user.userId);
+    const isOfficial    = officialRoles.includes(req.user.role);
+
+    if (!isParty && !isOfficial) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    // Fetch the document row including the blob
+    const [[doc]] = await req.db.execute(
+      `SELECT doc_id, transfer_id, original_filename, mime_type, size_bytes, file_data
+       FROM transfer_documents
+       WHERE doc_id = ? AND transfer_id = ?`,
+      [req.params.docId, req.params.id]
+    );
+
+    if (!doc) {
+      return res.status(404).json({ message: "Document not found" });
+    }
+
+    if (!doc.file_data) {
+      return res.status(410).json({ message: "File data not available — may have been moved to external storage" });
+    }
+
+    // Derive a safe filename for the Content-Disposition header
+    const safeFilename = doc.original_filename.replace(/[^\w.\-]/g, "_");
+
+    res.set({
+      "Content-Type":        doc.mime_type || "application/octet-stream",
+      "Content-Length":      doc.size_bytes,
+      "Content-Disposition": `attachment; filename="${safeFilename}"`,
+      "Cache-Control":       "private, no-store",
+      "X-Content-Hash":      doc.ipfs_cid || "",   // lets the client verify integrity
+    });
+
+    // file_data is a Buffer when using mysql2 with MEDIUMBLOB
+    return res.end(doc.file_data);
+  } catch (err) {
+    console.error("Download document error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 export default router;
