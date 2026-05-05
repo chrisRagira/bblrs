@@ -7,7 +7,7 @@ const router = express.Router();
 router.get(
   "/transfers/pending",
   verifyToken,
-  authorizeRoles("REGISTRAR"),
+  authorizeRoles("REGISTRAR",'CLERK','COUNTY_OFFICER','VALUER'),
   async (req, res) => {
     try {
       const [rows] = await req.db.execute(
@@ -37,7 +37,7 @@ router.get(
         JOIN users prev  ON t.previous_owner_id = prev.user_id
         JOIN users new_o ON t.new_owner_id = new_o.user_id
 
-        WHERE t.status = 'PENDING'
+        WHERE t.status <> 'APPROVED'
         ORDER BY t.transferred_at DESC`
       );
 

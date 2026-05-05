@@ -19,10 +19,10 @@ import DocumentVerifier from "../pages/DocumentVerifier";
 import AuditLog        from "../pages/AuditLog";
 import AdminUsers      from "../pages/AdminUsers";
 import NotFound        from "../pages/NotFound";
-// 👇 Add these missing imports
 import ForgotPassword from "../pages/ForgotPassword";
 import ResetPassword from "../pages/ResetPassword";
 import ReportsDashboard from "../pages/ReportsDashboard";
+import TransferDetail from "../pages/TransferDetail";
 
 export default function AppRouter() {
   return (
@@ -34,7 +34,6 @@ export default function AppRouter() {
             <Route path="/"        element={<LandingPage />} />
             <Route path="/login"   element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
-            {/* 👇 Add these missing public routes */}
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password/:token" element={<ResetPassword />} />
             <Route path="/search"  element={<SearchResults />} />
@@ -57,6 +56,12 @@ export default function AppRouter() {
             <Route path="/transfers/initiate" element={
               <ProtectedRoute roles={["BUYER/SELLER","LEGAL","REGISTRAR"]}>
                 <LandTransfer />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/transfers/:id" element={
+              <ProtectedRoute roles={["BUYER/SELLER","REGISTRAR","ADMIN","LEGAL","FINANCE",'CLERK','VALUER','LAND_CONTROL_BOARD','SURVEYOR','ADVOCATE','COUNTY_OFFICER']}>
+                <TransferDetail />
               </ProtectedRoute>
             } />
 

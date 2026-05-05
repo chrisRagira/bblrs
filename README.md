@@ -39,7 +39,9 @@ cp wallet/admin.id wallet/appUser.id ~/bblrs/land-registry-backend/wallet
 
 cd ~/bblrs/land-registry-backend
 npm install
-npx nodemon src/server.js
+npx nodemon src/server.js 
+
+ngrok http 3000
 
 export CRYPTO_PATH=~/bblrs/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com
 export CHANNEL_NAME=mychannel

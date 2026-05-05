@@ -12,6 +12,7 @@ import parcelRoutes from "./routes/parcelRoutes.js";
 import encumbranceRoutes from "./routes/encumbranceRoutes.js"
 import transferRoutes from "./routes/transferRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
+import reportsRouter from "./routes/reportsRoutes.js";
 const app = express();
 
 import db from "./config/db.js";
@@ -47,6 +48,7 @@ app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/transfers", transferRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
 app.use("/api/v1/encumbrances", encumbranceRoutes);
+app.use("/api/v1/reports", reportsRouter);
 
 app.use((err, req, res, next) => {
   console.error("🔥 SERVER ERROR:", err);

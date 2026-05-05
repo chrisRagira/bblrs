@@ -54,7 +54,7 @@ export async function getSummary(req, res) {
     const [[{ transfers }]] = await req.db.execute(
       `SELECT COUNT(*) AS transfers
        FROM transfers
-       WHERE created_at BETWEEN ? AND ?`,
+       WHERE transferred_at BETWEEN ? AND ?`,
       [from, to + " 23:59:59"]
     );
 
@@ -67,10 +67,10 @@ export async function getSummary(req, res) {
 
     // Total value of approved transfers in period
     const [[{ totalValue }]] = await req.db.execute(
-      `SELECT COALESCE(SUM(sale_price_kes), 0) AS totalValue
+      `SELECT COALESCE(SUM(sale_price), 0) AS totalValue
        FROM transfers
        WHERE status = 'APPROVED'
-         AND created_at BETWEEN ? AND ?`,
+         AND transferred_at BETWEEN ? AND ?`,
       [from, to + " 23:59:59"]
     );
 
@@ -90,15 +90,15 @@ export async function getSummary(req, res) {
 
     const [[{ prevTransfers }]] = await req.db.execute(
       `SELECT COUNT(*) AS prevTransfers FROM transfers
-       WHERE created_at BETWEEN ? AND ?`,
+       WHERE transferred_at BETWEEN ? AND ?`,
       [pf, pt + " 23:59:59"]
     );
 
     const [[{ prevValue }]] = await req.db.execute(
-      `SELECT COALESCE(SUM(sale_price_kes), 0) AS prevValue
+      `SELECT COALESCE(SUM(sale_price), 0) AS prevValue
        FROM transfers
        WHERE status = 'APPROVED'
-         AND created_at BETWEEN ? AND ?`,
+         AND transferred_at BETWEEN ? AND ?`,
       [pf, pt + " 23:59:59"]
     );
 
@@ -137,11 +137,11 @@ export async function getMonthlyActivity(req, res) {
     );
 
     const [transferRows] = await req.db.execute(
-      `SELECT DATE_FORMAT(created_at, '%b') AS month,
-              MONTH(created_at)             AS month_num,
+      `SELECT DATE_FORMAT(transferred_at, '%b') AS month,
+              MONTH(transferred_at)             AS month_num,
               COUNT(*)                      AS count
        FROM transfers
-       WHERE created_at BETWEEN ? AND ?
+       WHERE transferred_at BETWEEN ? AND ?
        GROUP BY month_num, month
        ORDER BY month_num`,
       [from, to + " 23:59:59"]
@@ -187,12 +187,12 @@ export async function getTransferOutcomes(req, res) {
 
   try {
     const [rows] = await req.db.execute(
-      `SELECT DATE_FORMAT(created_at, '%b') AS month,
-              MONTH(created_at)             AS month_num,
+      `SELECT DATE_FORMAT(transferred_at, '%b') AS month,
+              MONTH(transferred_at)             AS month_num,
               status,
               COUNT(*)                      AS count
        FROM transfers
-       WHERE created_at BETWEEN ? AND ?
+       WHERE transferred_at BETWEEN ? AND ?
          AND status IN ('APPROVED','REJECTED','PENDING')
        GROUP BY month_num, month, status
        ORDER BY month_num`,
@@ -270,11 +270,11 @@ export async function getCountyStats(req, res) {
          p.county,
          COUNT(DISTINCT p.parcel_id)                                      AS parcels,
          COUNT(DISTINCT t.transfer_id)                                    AS transfers,
-         COALESCE(SUM(CASE WHEN t.status='APPROVED' THEN t.sale_price_kes ELSE 0 END), 0) AS total_value_kes
+         COALESCE(SUM(CASE WHEN t.status='APPROVED' THEN t.sale_price ELSE 0 END), 0) AS total_value_kes
        FROM parcels p
        LEFT JOIN transfers t
          ON t.parcel_id = p.parcel_id
-         AND t.created_at BETWEEN ? AND ?
+         AND t.transferred_at BETWEEN ? AND ?
        WHERE p.created_at BETWEEN ? AND ?
        GROUP BY p.county
        ORDER BY parcels DESC
@@ -326,10 +326,10 @@ export async function getTransferValueByType(req, res) {
       `SELECT
          transfer_type                        AS type,
          COUNT(*)                             AS count,
-         COALESCE(SUM(sale_price_kes), 0)     AS total_value_kes
+         COALESCE(SUM(sale_price), 0)     AS total_value_kes
        FROM transfers
        WHERE status = 'APPROVED'
-         AND created_at BETWEEN ? AND ?
+         AND transferred_at BETWEEN ? AND ?
        GROUP BY transfer_type
        ORDER BY total_value_kes DESC`,
       [from, to + " 23:59:59"]
@@ -362,7 +362,7 @@ export async function getTransferSummary(req, res) {
     const [rows] = await req.db.execute(
       `SELECT status, COUNT(*) AS count
        FROM transfers
-       WHERE created_at BETWEEN ? AND ?
+       WHERE transferred_at BETWEEN ? AND ?
        GROUP BY status`,
       [from, to + " 23:59:59"]
     );
@@ -427,9 +427,9 @@ export async function getRecentTransactions(req, res) {
         'Transfer'                    AS tx_type,
         p.title_number                AS parcel,
         p.county,
-        t.sale_price_kes              AS value_kes,
+        t.sale_price              AS value_kes,
         t.status                      AS tx_status,
-        t.created_at                  AS tx_date
+        t.transferred_at                  AS tx_date
       FROM transfers t
       JOIN parcels p ON p.parcel_id = t.parcel_id
 
@@ -440,7 +440,7 @@ export async function getRecentTransactions(req, res) {
         'Encumbrance'                   AS tx_type,
         p.title_number                  AS parcel,
         p.county,
-        e.amount_kes                    AS value_kes,
+        e.amount                    AS value_kes,
         e.status                        AS tx_status,
         e.created_at                    AS tx_date
       FROM encumbrances e
@@ -490,17 +490,17 @@ export async function exportReport(req, res) {
          p.county,
          p.land_use_type,
          t.transfer_type,
-         t.sale_price_kes,
+         t.sale_price,
          t.status,
          u_from.full_name  AS seller,
          u_to.full_name    AS buyer,
-         t.created_at
+         t.transferred_at
        FROM transfers t
        JOIN parcels p        ON p.parcel_id   = t.parcel_id
        JOIN users   u_from   ON u_from.user_id = t.previous_owner_id
        JOIN users   u_to     ON u_to.user_id   = t.new_owner_id
-       WHERE t.created_at BETWEEN ? AND ?
-       ORDER BY t.created_at DESC`,
+       WHERE t.transferred_at BETWEEN ? AND ?
+       ORDER BY t.transferred_at DESC`,
       [from, to + " 23:59:59"]
     );
 
@@ -512,7 +512,7 @@ export async function exportReport(req, res) {
         r.county,
         r.land_use_type,
         r.transfer_type,
-        r.sale_price_kes,
+        r.sale_price,
         r.status,
         `"${r.seller}"`,
         `"${r.buyer}"`,
@@ -528,3 +528,39 @@ export async function exportReport(req, res) {
     res.status(500).json({ message: "Export failed." });
   }
 }
+// export const getDisputeStats = async (req, res) => {
+//   try {
+//     // const [rows] = await pool.query(
+//     //   `SELECT d.county, d.case_number, d.dispute_type,
+//     //           d.priority, DATEDIFF(NOW(), d.created_at) AS days_open
+//     //    FROM   land_disputes d
+//     //    WHERE  d.status = 'OPEN'
+//     //    ORDER  BY FIELD(d.priority,'HIGH','MED','LOW'), d.created_at DESC
+//     //    LIMIT  20`
+//     // );
+//     const rows =[]
+//     res.json({ success: true, data: rows });
+//   } catch (err) {
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
+
+// export const getComplianceMetrics = async (req, res) => {
+//   const { period = new Date().getFullYear() } = req.query;
+//   try {
+//     const [rows] = await req.db.execute(
+//       `SELECT
+//          SUM(documents_submitted = 1)  / COUNT(*) * 100 AS document_submission,
+//          SUM(kyc_verified = 1)         / COUNT(*) * 100 AS kyc_verification,
+//          SUM(stamp_duty_paid = 1)      / COUNT(*) * 100 AS stamp_duty_paid,
+//          SUM(advocate_signed = 1)      / COUNT(*) * 100 AS advocate_signoff,
+//          SUM(survey_compliant = 1)     / COUNT(*) * 100 AS survey_compliance
+//        FROM transfers
+//        WHERE YEAR(transferred_at) = ?`,
+//       [period]
+//     );
+//     res.json({ success: true, data: rows[0] });
+//   } catch (err) {
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };

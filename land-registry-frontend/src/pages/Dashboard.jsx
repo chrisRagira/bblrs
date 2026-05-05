@@ -74,26 +74,13 @@ const TRANSFER_STEPS = [
     note:  "System notifies buyer of duty amount. Buyer uploads payment proof. KRA API confirms payment.",
   },
   {
-    key:   "COMPLIANCE_CHECKED",
-    label: "Compliance Check",
-    icon:  "✅",
-    actor: "System",
-    note:  "Automated compliance check across all completed steps before final registrar review.",
-  },
-  {
     key:   "APPROVED",
     label: "Registrar Approved",
     icon:  "🏛",
     actor: "Registrar",
     note:  "Registrar reviews the full transaction record and issues final approval or rejection.",
   },
-  {
-    key:   "COMPLETED",
-    label: "Title Issued",
-    icon:  "🎉",
-    actor: "Registrar (System)",
-    note:  "System generates a digital title deed and updates land ownership records on the blockchain.",
-  },
+  
 ];
 
 const STATUS_STEP_INDEX = Object.fromEntries(
@@ -148,7 +135,7 @@ const ROLE_CONFIG = {
       { label: "Completed Surveys", path: "/surveyor/completed",   icon: "✅" },
     ],
   },
-  LCB_OFFICER: {
+  LAND_CONTROL_BOARD: {
     label: "LCB Officer",
     icon: "🏛️",
     accent: "#b45309",
@@ -222,6 +209,7 @@ function getRoleStats(role, parcels, pending) {
   const active     = parcels.filter(p => p.status === "ACTIVE").length;
   const encumbered = parcels.filter(p => p.status === "ENCUMBERED").length;
   const byStatus   = (s) => pending.filter(t => t.status === s).length;
+  console.log(pending)
 
   const maps = {
     ADVOCATE: [
@@ -248,7 +236,7 @@ function getRoleStats(role, parcels, pending) {
       { label: "Total Parcels",  value: parcels.length,                 icon: "🏘" },
       { label: "Pending Upload", value: byStatus("DOCUMENTS_VERIFIED"), icon: "📐" },
     ],
-    LCB_OFFICER: [
+    LAND_CONTROL_BOARD: [
       { label: "Consent Requests", value: byStatus("SURVEY_VERIFIED"), icon: "📋", accent: true },
       { label: "Approved",         value: byStatus("LCB_APPROVED"),    icon: "✅" },
       { label: "Total Reviewed",   value: pending.length,              icon: "📊" },
@@ -294,7 +282,7 @@ const ACTION_STATUS = {
   BUYER_SELLER:   "SALE_INITIATED",
   CLERK:          "ADVOCATE_APPOINTED",
   SURVEYOR:       "DOCUMENTS_VERIFIED",
-  LCB_OFFICER:    "SURVEY_VERIFIED",
+  LAND_CONTROL_BOARD:    "SURVEY_VERIFIED",
   COUNTY_OFFICER: "LCB_APPROVED",
   VALUER:         "RATES_CLEARED",
   REGISTRAR:      "COMPLIANCE_CHECKED",
@@ -324,7 +312,7 @@ function RoleActionPanel({ role, transfer }) {
       color: "#7c3aed",
       desc:  "Upload survey map & beacon confirmation. Make boundary adjustments if needed.",
     },
-    LCB_OFFICER: {
+    LAND_CONTROL_BOARD: {
       triggerStatus: "SURVEY_VERIFIED",
       cta:   "Review Consent",
       path:  `/lcb/queue/${transfer?.transfer_id}`,
@@ -777,7 +765,7 @@ export default function Dashboard() {
   const [pending,       setPending]       = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [loading,       setLoading]       = useState(true);
-
+   console.log(role)
   const cfg             = ROLE_CONFIG[role] || ROLE_CONFIG.BUYER_SELLER;
   const myActionStatus  = ACTION_STATUS[role];
   const actionableItems = myActionStatus ? pending.filter(t => t.status === myActionStatus) : [];
@@ -787,17 +775,27 @@ export default function Dashboard() {
     const load = async () => {
       setLoading(true);
       try {
-        const [pRes, tuRes, tRes] = await Promise.all([
+        const [pRes, tuRes, tRes, sRes, lRes] = await Promise.all([
           parcelsApi.getByOwner(user?.id),
+
           transfersApi.getByOwner(),
-          role === "REGISTRAR"
+
+          ["REGISTRAR", "CLERK",'COUNTY_OFFICER','VALUER'].includes(role)
             ? registrarApi.getPending()
+            : Promise.resolve({ data: { data: [] } }),
+
+          role === "SURVEYOR"
+            ? transfersApi.getBySurveyor(user?.id)
+            : Promise.resolve({ data: { data: [] } }),
+
+          role === "LAND_CONTROL_BOARD"
+            ? transfersApi.getLCB()
             : Promise.resolve({ data: { data: [] } }),
         ]);
 
         const combined = [
           ...new Map(
-            [...(tuRes.data.data || []), ...(tRes.data.data || [])].map(t => [t.transfer_id, t])
+            [...(tuRes.data.data || []), ...(tRes.data.data || []),...(lRes.data.data || []),...(sRes.data.data || [])].map(t => [t.transfer_id, t])
           ).values(),
         ];
 
@@ -1000,7 +998,7 @@ export default function Dashboard() {
                       {role === "REGISTRAR"      ? "Final Approval Queue"  :
                        role === "CLERK"          ? "Verification Queue"    :
                        role === "SURVEYOR"       ? "Assigned Surveys"      :
-                       role === "LCB_OFFICER"    ? "Consent Requests"      :
+                       role === "LAND_CONTROL_BOARD"    ? "Consent Requests"      :
                        role === "COUNTY_OFFICER" ? "Clearance Requests"    :
                        role === "VALUER"         ? "Valuation Queue"       :
                                                    "My Transactions"}

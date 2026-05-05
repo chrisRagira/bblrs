@@ -37,12 +37,45 @@ export const parcelsApi = {
 // ─── Transfers ───────────────────────────────────────────────────────────────
 export const transfersApi = {
   initiate:   (data)       => api.post("/transfers", data),
+
   getById:    (id)         => api.get(`/transfers/${id}`),
-  getByOwner: ()     => api.get(`/transfers`),
+  getByOwner: ()           => api.get(`/transfers`),
   getPending: ()           => api.get("/transfers/pending"),
-  approve:    (id)         => api.post(`/transfers/${id}/approve`),
+  getLCB: ()           => api.get("/transfers/lcb"),
+  getBySurveyor:(id)       => api.get(`transfers/surveyor/${id}`),
+  approve:    (id, data)   => api.post(`/transfers/${id}/approve`, data),
   reject:     (id, data)   => api.post(`/transfers/${id}/reject`, data),
   cancel:     (id)         => api.delete(`/transfers/${id}`),
+  getDocs:     (id)        => api.get(`/transfers/${id}/documents`),
+downloadDoc: (id, docId) => api.get(`/transfers/${id}/documents/${docId}`, { responseType: "arraybuffer" }),
+  
+  buyerDecision: (id, data) =>
+    api.post(`/transfers/${id}/buyer-decision`, data),
+  
+  advocateDocs: (id, formData) =>
+    api.post(`/transfers/${id}/advocate-docs`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }),
+    
+  clerkVerify: (id, data) =>
+    api.post(`/transfers/${id}/clerk-verify`, data),
+  
+  survey: (id, data) =>
+    api.post(`/transfers/${id}/survey`, data),
+  
+  lcbDecision: (id, data) =>
+    api.post(`/transfers/${id}/lcb-decision`, data),
+  
+  countyRates: (id, data) =>
+    api.post(`/transfers/${id}/county-rates`, data),
+  
+  valuation: (id, data) =>
+    api.post(`/transfers/${id}/valuation`, data),
+  
+  stampDuty: (id, formData) =>
+    api.post(`/transfers/${id}/stamp-duty`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }),
 };
 
 // ─── Encumbrances ─────────────────────────────────────────────────────────────
