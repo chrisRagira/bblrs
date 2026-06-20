@@ -428,6 +428,10 @@ router.get("/:id/history", async (req, res) => {
         [req.params.id]
       );
 
+      if (rows.length===0){
+        
+      }
+
       return res.status(200).json({ data: rows });
     } catch (err) {
       console.error("Fetch transfers error:", err);

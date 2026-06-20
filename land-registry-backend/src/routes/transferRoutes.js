@@ -156,7 +156,7 @@ router.post("/", verifyToken, async (req, res) => {
 
 // ─────────────────────────────────────────────
 // Stage 2 — Buyer approves or rejects
-// PATCH /api/v1/transfers/:id/buyer-decision
+// post /api/v1/transfers/:id/buyer-decision
 // ─────────────────────────────────────────────
 router.post("/:id/buyer-decision", verifyToken, async (req, res) => {
   const { decision, notes } = req.body; // "APPROVE" | "REJECT"
@@ -181,7 +181,7 @@ router.post("/:id/buyer-decision", verifyToken, async (req, res) => {
       return res.status(403).json({ message: "Only the buyer can action this step" });
     }
 
-    const toStatus = decision === "APPROVE" ? "PENDING_ADVOCATE_DOCS" : "BUYER_REJECTED";
+    const toStatus = decision === "APPROVE" ? "PENDING_SURVEYOR_APPOINTMENT" : "BUYER_REJECTED";
     await transition(conn, {
       transferId: transfer.transfer_id,
       actorId:    req.user.userId,
@@ -192,9 +192,9 @@ router.post("/:id/buyer-decision", verifyToken, async (req, res) => {
     });
 
     if (decision === "APPROVE") {
-      // Notify advocate
-      await notify(conn, transfer.advocate_id, "info",
-        `You have been appointed as advocate for transfer #${transfer.transfer_id}. Please prepare and upload the legal documents.`);
+      // Buyer now needs to appoint a surveyor — no outbound notification needed yet
+      await notify(conn, req.user.userId, "info",
+        `Transfer #${transfer.transfer_id} accepted. Please appoint a surveyor to proceed.`);
     } else {
       // Notify seller
       await notify(conn, transfer.previous_owner_id, "warn",
@@ -214,9 +214,107 @@ router.post("/:id/buyer-decision", verifyToken, async (req, res) => {
 });
 
 
+
+router.get("/lcb", verifyToken, async (req, res) => {
+  try {
+    const [transfer] = await req.db.execute(
+      `SELECT t.*, p.title_number, p.county, p.area_hectares, p.land_use_type,
+              s.first_name AS seller_first_name, s.last_name AS seller_last_name,
+              b.first_name AS buyer_first_name,  b.last_name AS buyer_last_name,
+              a.first_name AS advocate_first_name, a.last_name AS advocate_last_name
+       FROM transfers t
+       JOIN parcels p ON t.parcel_id         = p.parcel_id
+       JOIN users   s ON t.previous_owner_id = s.user_id
+       JOIN users   b ON t.new_owner_id      = b.user_id
+       LEFT JOIN users a ON t.advocate_id   = a.user_id
+       WHERE p.land_use_type = ?
+         AND t.status <> ? 
+           AND t.status NOT LIKE '%rejected%'`,
+      ['AGRICULTURAL', 'APPROVED']
+    );
+    console.log(transfer)
+    
+    return res.json({ data: transfer });
+  } catch (err) {
+    console.error("Fetch transfer error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+
+
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// Stage 2b — Buyer appoints surveyor
+// post /api/v1/transfers/:id/appoint-surveyor
+// ─────────────────────────────────────────────
+router.post("/:id/appoint-surveyor", verifyToken, async (req, res) => {
+  const { surveyorNationalId, notes } = req.body;
+  if (!surveyorNationalId?.trim()) {
+    return res.status(400).json({ message: "surveyorNationalId is required" });
+  }
+
+  const conn = await req.db.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [[transfer]] = await conn.execute(
+      "SELECT * FROM transfers WHERE transfer_id = ?",
+      [req.params.id]
+    );
+    if (!transfer) {
+      await conn.rollback();
+      return res.status(404).json({ message: "Transfer not found" });
+    }
+    if (transfer.new_owner_id !== req.user.userId) {
+      await conn.rollback();
+      return res.status(403).json({ message: "Only the buyer can appoint a surveyor" });
+    }
+
+    const [[surveyor]] = await conn.execute(
+      "SELECT user_id, first_name, last_name FROM users WHERE national_id = ? AND role = 'SURVEYOR'",
+      [surveyorNationalId]
+    );
+    if (!surveyor) {
+      await conn.rollback();
+      return res.status(404).json({ message: "Surveyor not found in the system" });
+    }
+
+    await conn.execute(
+      "UPDATE transfers SET surveyor_id = ? WHERE transfer_id = ?",
+      [surveyor.user_id, transfer.transfer_id]
+    );
+
+    await transition(conn, {
+      transferId: transfer.transfer_id,
+      actorId:    req.user.userId,
+      actorRole:  "BUYER",
+      from:       "PENDING_SURVEYOR_APPOINTMENT",
+      to:         "PENDING_SURVEY",
+      notes:      notes || `Surveyor appointed: ${surveyor.first_name} ${surveyor.last_name}`,
+    });
+
+    await notify(conn, surveyor.user_id, "info",
+      `You have been appointed as surveyor for transfer #${transfer.transfer_id}. Please prepare and upload the mutation form.`);
+
+    await conn.commit();
+    return res.json({
+      message: "Surveyor appointed. They have been notified to submit the mutation form.",
+      data: { surveyorId: surveyor.user_id },
+    });
+  } catch (err) {
+    await conn.rollback();
+    if (err.statusCode === 409) return res.status(409).json({ message: "Concurrent status change — please retry" });
+    console.error("Appoint surveyor error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  } finally {
+    conn.release();
+  }
+});
+
+
 // Stage 3 — Advocate uploads legal documents
-// PATCH /api/v1/transfers/:id/advocate-docs
+// post /api/v1/transfers/:id/advocate-docs
 // ─────────────────────────────────────────────
 router.post(
   "/:id/advocate-docs",
@@ -291,7 +389,7 @@ router.post(
 
 // ─────────────────────────────────────────────
 // Stage 4 — Registry clerk verifies documents
-// PATCH /api/v1/transfers/:id/clerk-verify
+// post /api/v1/transfers/:id/clerk-verify
 // ─────────────────────────────────────────────
 router.post("/:id/clerk-verify", verifyToken, authorizeRoles("CLERK"), async (req, res) => {
   // decision: "APPROVE" | "REJECT" | "REQUIRE_SURVEY"
@@ -372,7 +470,7 @@ router.post("/:id/clerk-verify", verifyToken, authorizeRoles("CLERK"), async (re
 
 // ─────────────────────────────────────────────
 // Stage 5 — Surveyor submits findings
-// PATCH /api/v1/transfers/:id/survey
+// post /api/v1/transfers/:id/survey
 // ─────────────────────────────────────────────
 router.post("/:id/survey", verifyToken, authorizeRoles("SURVEYOR"), async (req, res) => {
   const { notes, coordinateAdjustments } = req.body;
@@ -432,7 +530,7 @@ router.post("/:id/survey", verifyToken, authorizeRoles("SURVEYOR"), async (req, 
 
 // ─────────────────────────────────────────────
 // Stage 6 — LCB approval (agricultural only)
-// PATCH /api/v1/transfers/:id/lcb-decision
+// post /api/v1/transfers/:id/lcb-decision
 // ─────────────────────────────────────────────
 router.post("/:id/lcb-decision", verifyToken, authorizeRoles("LAND_CONTROL_BOARD"), async (req, res) => {
   const { decision, notes } = req.body;
@@ -457,7 +555,7 @@ router.post("/:id/lcb-decision", verifyToken, authorizeRoles("LAND_CONTROL_BOARD
     await transition(conn, {
       transferId: transfer.transfer_id,
       actorId:    req.user.userId,
-      actorRole:  "LCB_OFFICER",
+      actorRole:  "LAND_CONTROL_BOARD",
       from:       "PENDING_LCB_APPROVAL",
       to:         toStatus,
       notes,
@@ -485,7 +583,7 @@ router.post("/:id/lcb-decision", verifyToken, authorizeRoles("LAND_CONTROL_BOARD
 
 // ─────────────────────────────────────────────
 // Stage 7 — County officer confirms rates cleared
-// PATCH /api/v1/transfers/:id/county-rates
+// post /api/v1/transfers/:id/county-rates
 // ─────────────────────────────────────────────
 router.post("/:id/county-rates", verifyToken, authorizeRoles("COUNTY_OFFICER"), async (req, res) => {
   const { ratesCleared, notes } = req.body;
@@ -556,7 +654,7 @@ router.post("/:id/county-rates", verifyToken, authorizeRoles("COUNTY_OFFICER"), 
 
 // ─────────────────────────────────────────────
 // Stage 8 — Government valuer sets stamp duty
-// PATCH /api/v1/transfers/:id/valuation
+// post /api/v1/transfers/:id/valuation
 // ─────────────────────────────────────────────
 router.post("/:id/valuation", verifyToken, authorizeRoles("VALUER"), async (req, res) => {
   const { valuationKES, notes } = req.body;
@@ -623,8 +721,192 @@ router.post("/:id/valuation", verifyToken, authorizeRoles("VALUER"), async (req,
 
 
 // ─────────────────────────────────────────────
-// Stage 9 — Buyer uploads stamp duty proof
-// PATCH /api/v1/transfers/:id/stamp-duty
+// Stage 9a — Initiate M-Pesa STK push for stamp duty
+// POST /api/v1/transfers/:id/stamp-duty/mpesa
+// ─────────────────────────────────────────────
+router.post("/:id/stamp-duty/mpesa", verifyToken, async (req, res) => {
+  const { phone } = req.body; // e.g. "254712345678"
+  if (!phone?.trim()) {
+    return res.status(400).json({ message: "phone number is required (format: 254XXXXXXXXX)" });
+  }
+
+  const [[transfer]] = await req.db.execute(
+    "SELECT * FROM transfers WHERE transfer_id = ?", [req.params.id]
+  );
+  if (!transfer) return res.status(404).json({ message: "Transfer not found" });
+  if (transfer.new_owner_id !== req.user.userId) {
+    return res.status(403).json({ message: "Only the buyer can initiate payment" });
+  }
+  if (transfer.status !== "PENDING_STAMP_DUTY") {
+    return res.status(400).json({ message: `Cannot pay at status: ${transfer.status}` });
+  }
+  if (!transfer.stamp_duty_kes) {
+    return res.status(400).json({ message: "Stamp duty amount has not been set yet" });
+  }
+
+  try {
+    // ── Daraja API: get access token ──────────────────────────────────────────
+    const authRes = await fetch(
+      "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
+      {
+        headers: {
+          Authorization: "Basic " + Buffer.from(
+            `${process.env.MPESA_CONSUMER_KEY}:${process.env.MPESA_CONSUMER_SECRET}`
+          ).toString("base64"),
+        },
+      }
+    );
+    const { access_token } = await authRes.json();
+
+    // ── STK push ──────────────────────────────────────────────────────────────
+    const timestamp  = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 14);
+    const password   = Buffer.from(
+      `${process.env.MPESA_SHORTCODE}${process.env.MPESA_PASSKEY}${timestamp}`
+    ).toString("base64");
+
+    const stkRes = await fetch(
+      "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
+      {
+        method:  "POST",
+        headers: { Authorization: `Bearer ${access_token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          BusinessShortCode: process.env.MPESA_SHORTCODE,
+          Password:          password,
+          Timestamp:         timestamp,
+          TransactionType:   "CustomerPayBillOnline",
+          Amount:            Math.ceil(transfer.stamp_duty_kes),   // KRA requires whole KES
+          PartyA:            phone,
+          PartyB:            process.env.MPESA_SHORTCODE,
+          PhoneNumber:       phone,
+          CallBackURL:       `${process.env.APP_URL}/api/v1/transfers/${transfer.transfer_id}/stamp-duty/mpesa/callback`,
+          AccountReference:  `STAMP-${transfer.transfer_id}`,
+          TransactionDesc:   `Stamp duty for transfer #${transfer.transfer_id}`,
+        }),
+      }
+    );
+    const stkData = await stkRes.json();
+
+    if (stkData.ResponseCode !== "0") {
+      return res.status(502).json({
+        message: "M-Pesa STK push failed",
+        detail:  stkData.ResponseDescription || stkData.errorMessage,
+      });
+    }
+
+    // Store the CheckoutRequestID so the callback can match it
+    await req.db.execute(
+      "UPDATE transfers SET mpesa_checkout_id = ? WHERE transfer_id = ?",
+      [stkData.CheckoutRequestID, transfer.transfer_id]
+    );
+
+    return res.json({
+      message:           "STK push sent. Ask the buyer to enter their M-Pesa PIN.",
+      checkoutRequestId: stkData.CheckoutRequestID,
+    });
+  } catch (err) {
+    console.error("M-Pesa STK error:", err);
+    return res.status(500).json({ message: "Failed to initiate M-Pesa payment" });
+  }
+});
+
+
+// ─────────────────────────────────────────────
+// Stage 9b — M-Pesa callback (called by Safaricom)
+// POST /api/v1/transfers/:id/stamp-duty/mpesa/callback
+// No auth — Safaricom hits this directly
+// ─────────────────────────────────────────────
+router.post("/:id/stamp-duty/mpesa/callback", async (req, res) => {
+  // Always ACK immediately — Safaricom retries if it doesn't get 200
+  res.json({ ResultCode: 0, ResultDesc: "Accepted" });
+
+  try {
+    const body     = req.body?.Body?.stkCallback;
+    const resultCode = body?.ResultCode;
+    const checkoutId = body?.CheckoutRequestID;
+
+    const [[transfer]] = await req.db.execute(
+      "SELECT * FROM transfers WHERE transfer_id = ? AND mpesa_checkout_id = ?",
+      [req.params.id, checkoutId]
+    );
+    if (!transfer) return; // unknown callback — ignore
+
+    if (resultCode !== 0) {
+      // Payment failed or cancelled — notify buyer but don't block the transfer
+      await notify(req.db, transfer.new_owner_id, "warn",
+        `M-Pesa stamp duty payment for transfer #${transfer.transfer_id} failed or was cancelled. Please try again.`);
+      return;
+    }
+
+    // Extract metadata from CallbackMetadata items
+    const items   = body.CallbackMetadata?.Item || [];
+    const get     = (name) => items.find((i) => i.Name === name)?.Value;
+    const mpesaRef  = get("MpesaReceiptNumber");
+    const amount    = get("Amount");
+    const paidAt    = get("TransactionDate"); // YYYYMMDDHHmmss
+
+    // Build a synthetic receipt text and hash it as the CID
+    const receiptText = `MPESA|${mpesaRef}|KES${amount}|${paidAt}|TRANSFER#${transfer.transfer_id}`;
+    const receiptHash = computeHash(Buffer.from(receiptText));
+
+    const conn = await req.db.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      // Insert a transfer_documents row for the M-Pesa receipt record
+      await conn.execute(
+        `INSERT INTO transfer_documents
+           (transfer_id, document_role, original_filename, mime_type,
+            size_bytes, ipfs_cid, file_data, created_at)
+         VALUES (?, 'stamp_duty_proof', ?, 'text/plain', ?, ?, ?, NOW())`,
+        [
+          transfer.transfer_id,
+          `mpesa-receipt-${mpesaRef}.txt`,
+          Buffer.byteLength(receiptText),
+          receiptHash,
+          Buffer.from(receiptText),
+        ]
+      );
+
+      await conn.execute(
+        `UPDATE transfers
+         SET stamp_duty_paid = TRUE, stamp_duty_receipt = ?, mpesa_receipt = ?
+         WHERE transfer_id = ?`,
+        [receiptHash, mpesaRef, transfer.transfer_id]
+      );
+
+      await transition(conn, {
+        transferId: transfer.transfer_id,
+        actorId:    transfer.new_owner_id,
+        actorRole:  "BUYER",
+        from:       "PENDING_STAMP_DUTY",
+        to:         "PENDING_REGISTRAR_APPROVAL",
+        notes:      `M-Pesa payment confirmed. Receipt: ${mpesaRef}, Amount: KES ${amount}`,
+      });
+
+      const [registrars] = await conn.execute("SELECT user_id FROM users WHERE role = 'REGISTRAR'");
+      for (const r of registrars) {
+        await notify(conn, r.user_id, "info",
+          `Transfer #${transfer.transfer_id} stamp duty paid via M-Pesa (${mpesaRef}). Ready for final approval.`);
+      }
+      await notify(conn, transfer.new_owner_id, "success",
+        `Stamp duty payment confirmed (M-Pesa ref: ${mpesaRef}). Transfer forwarded for final approval.`);
+
+      await conn.commit();
+    } catch (e) {
+      await conn.rollback();
+      console.error("M-Pesa callback DB error:", e);
+    } finally {
+      conn.release();
+    }
+  } catch (err) {
+    console.error("M-Pesa callback error:", err);
+  }
+});
+
+
+// ─────────────────────────────────────────────
+// Stage 9c — Buyer uploads manual stamp duty proof (alternative to M-Pesa)
+// post /api/v1/transfers/:id/stamp-duty
 // ─────────────────────────────────────────────
 router.post(
   "/:id/stamp-duty",
@@ -675,7 +957,6 @@ router.post(
         notes:      req.body.notes || null,
       });
 
-      // Notify registrars
       const [registrars] = await conn.execute("SELECT user_id FROM users WHERE role = 'REGISTRAR'");
       for (const r of registrars) {
         await notify(conn, r.user_id, "info",
@@ -733,7 +1014,7 @@ router.post("/:id/approve", verifyToken, authorizeRoles("REGISTRAR"), async (req
     if (parcel.land_use_type === "AGRICULTURAL") {
       const [[lcbEvent]] = await conn.execute(
         `SELECT event_id FROM transfer_events
-         WHERE transfer_id = ? AND actor_role = 'LCB_OFFICER' AND to_status = 'PENDING_COUNTY_RATES'
+         WHERE transfer_id = ? AND actor_role = 'LAND_CONTROL_BOARD' AND to_status = 'PENDING_COUNTY_RATES'
          LIMIT 1`,
         [transfer.transfer_id]
       );
@@ -881,33 +1162,11 @@ router.get("/", verifyToken, async (req, res) => {
   }
 });
 
-router.get("/surveyor/:id", verifyToken, async (req, res) => {
-  try {
-    const [rows] = await req.db.execute(
-      `SELECT t.transfer_id, t.status, t.transfer_type, t.sale_price,
-              t.transferred_at, t.stamp_duty_kes,
-              p.title_number, p.county, p.area_hectares,
-              s.first_name AS seller_first_name, s.last_name AS seller_last_name,
-              b.first_name AS buyer_first_name,  b.last_name AS buyer_last_name
-       FROM transfers t
-       JOIN parcels p ON t.parcel_id   = p.parcel_id
-       JOIN users   s ON t.previous_owner_id = s.user_id
-       JOIN users   b ON t.new_owner_id      = b.user_id
-       WHERE t.surveyor_id = ? 
-       ORDER BY t.transferred_at DESC`,
-      [req.params.id]
-    );
-    return res.json({ data: rows });
-  } catch (err) {
-    console.error("Fetch transfers error:", err);
-    return res.status(500).json({ message: "Internal server error" });
-  }
-});
 
 // ─────────────────────────────────────────────
 // GET /api/v1/transfers/pending — queue for registrar / clerks
 // ─────────────────────────────────────────────
-router.get("/pending", verifyToken, async (req, res) => {
+router.get("/pending", verifyToken, authorizeRoles("REGISTRAR", "CLERK"), async (req, res) => {
   const role = req.user.role;
   const statusFilter = role === "REGISTRAR"
     ? "PENDING_REGISTRAR_APPROVAL"
@@ -935,40 +1194,6 @@ router.get("/pending", verifyToken, async (req, res) => {
 });
 
 
-
-router.get("/lcb", verifyToken, async (req, res) => {
-  
-  try {
-    const [rows] = await req.db.execute(
-      `SELECT 
-          t.transfer_id, 
-          t.status, 
-          t.transfer_type, 
-          t.sale_price, 
-          t.transferred_at,
-          p.title_number, 
-          p.county,
-          s.first_name AS seller_first_name, 
-          s.last_name  AS seller_last_name,
-          b.first_name AS buyer_first_name,  
-          b.last_name  AS buyer_last_name
-      FROM transfers t
-      JOIN parcels p ON t.parcel_id         = p.parcel_id
-      JOIN users   s ON t.previous_owner_id = s.user_id
-      JOIN users   b ON t.new_owner_id      = b.user_id
-      WHERE t.status <> ?
-        AND LOWER(p.land_use_type) = 'agricultural'
-      ORDER BY t.transferred_at ASC`,
-      ['APPROVED']
-    );
-    return res.json({ data: rows });
-  } catch (err) {
-    console.error("Fetch pending error:", err);
-    return res.status(500).json({ message: "Internal server error" });
-  }
-});
-
-
 // ─────────────────────────────────────────────
 // GET /api/v1/transfers/:id — single transfer detail
 // ─────────────────────────────────────────────
@@ -987,7 +1212,7 @@ router.get("/:id", verifyToken, async (req, res) => {
        WHERE t.transfer_id = ?
          AND (t.previous_owner_id = ? OR t.new_owner_id = ?
               OR t.advocate_id = ? OR ? IN (
-                SELECT user_id FROM users WHERE role IN ('REGISTRAR','CLERK','SURVEYOR','LCB_OFFICER','COUNTY_OFFICER','VALUER','LAND_CONTROL_BOARD')
+                SELECT user_id FROM users WHERE role IN ('REGISTRAR','CLERK','SURVEYOR','LAND_CONTROL_BOARD','COUNTY_OFFICER','VALUER')
               ))`,
       [req.params.id, req.user.userId, req.user.userId, req.user.userId, req.user.userId]
     );
@@ -1009,6 +1234,36 @@ router.get("/:id", verifyToken, async (req, res) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 });
+
+
+
+router.get("/surveyor/:id", verifyToken, async (req, res) => {
+  try {
+    const [transfer] = await req.db.execute(
+      `SELECT t.*, p.title_number, p.county, p.area_hectares, p.land_use_type,
+              s.first_name AS seller_first_name, s.last_name AS seller_last_name,
+              b.first_name AS buyer_first_name,  b.last_name AS buyer_last_name,
+              a.first_name AS advocate_first_name, a.last_name AS advocate_last_name
+       FROM transfers t
+       JOIN parcels p ON t.parcel_id         = p.parcel_id
+       JOIN users   s ON t.previous_owner_id = s.user_id
+       JOIN users   b ON t.new_owner_id      = b.user_id
+       LEFT JOIN users a ON t.advocate_id   = a.user_id
+       WHERE t.surveyor_id = ?
+         AND t.status <> ? `,
+      [req.params.id, 'APPROVED']
+    );
+    console.log(transfer)
+    
+    return res.json({ data: transfer });
+  } catch (err) {
+    console.error("Fetch transfer error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+
+
 
 
 // ─────────────────────────────────────────────
@@ -1039,7 +1294,7 @@ router.get("/:id/title", verifyToken, async (req, res) => {
 // ─────────────────────────────────────────────
 async function notifyNextStage(conn, transfer, toStatus) {
   const roleMap = {
-    PENDING_LCB_APPROVAL:          "LCB_OFFICER",
+    PENDING_LCB_APPROVAL:          "LAND_CONTROL_BOARD",
     PENDING_COUNTY_RATES:          "COUNTY_OFFICER",
     PENDING_VALUATION:             "VALUER",
     PENDING_REGISTRAR_APPROVAL:    "REGISTRAR",
@@ -1053,120 +1308,5 @@ async function notifyNextStage(conn, transfer, toStatus) {
   }
 }
 
-
-
-
-// ─────────────────────────────────────────────
-// GET /api/v1/transfers/:id/documents
-// List all documents attached to a transfer
-// ─────────────────────────────────────────────
-router.get("/:id/documents", verifyToken, async (req, res) => {
-  try {
-    // Verify caller has access to this transfer
-    const [[transfer]] = await req.db.execute(
-      `SELECT transfer_id, previous_owner_id, new_owner_id, advocate_id, surveyor_id
-       FROM transfers WHERE transfer_id = ?`,
-      [req.params.id]
-    );
-
-    if (!transfer) {
-      return res.status(404).json({ message: "Transfer not found" });
-    }
-
-    const officialRoles = ["REGISTRAR", "CLERK", "VALUER", "COUNTY_OFFICER", "LCB_OFFICER"];
-    const isParty       = [
-      transfer.previous_owner_id,
-      transfer.new_owner_id,
-      transfer.advocate_id,
-      transfer.surveyor_id,
-    ].includes(req.user.userId);
-    const isOfficial    = officialRoles.includes(req.user.role);
-
-    if (!isParty && !isOfficial) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    // Return metadata only — no file_data blob in the list
-    const [docs] = await req.db.execute(
-      `SELECT doc_id, transfer_id, document_role, original_filename,
-              mime_type, size_bytes, ipfs_cid, created_at
-       FROM transfer_documents
-       WHERE transfer_id = ?
-       ORDER BY created_at ASC`,
-      [req.params.id]
-    );
-
-    return res.json({ data: docs });
-  } catch (err) {
-    console.error("List documents error:", err);
-    return res.status(500).json({ message: "Internal server error" });
-  }
-});
-
-
-// ─────────────────────────────────────────────
-// GET /api/v1/transfers/:id/documents/:docId
-// Stream a single document's binary content
-// ─────────────────────────────────────────────
-router.get("/:id/documents/:docId", verifyToken, async (req, res) => {
-  try {
-    // Verify caller has access to the parent transfer
-    const [[transfer]] = await req.db.execute(
-      `SELECT transfer_id, previous_owner_id, new_owner_id, advocate_id, surveyor_id
-       FROM transfers WHERE transfer_id = ?`,
-      [req.params.id]
-    );
-
-    if (!transfer) {
-      return res.status(404).json({ message: "Transfer not found" });
-    }
-
-    const officialRoles = ["REGISTRAR", "CLERK", "VALUER", "COUNTY_OFFICER", "LCB_OFFICER"];
-    const isParty       = [
-      transfer.previous_owner_id,
-      transfer.new_owner_id,
-      transfer.advocate_id,
-      transfer.surveyor_id,
-    ].includes(req.user.userId);
-    const isOfficial    = officialRoles.includes(req.user.role);
-
-    if (!isParty && !isOfficial) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    // Fetch the document row including the blob
-    const [[doc]] = await req.db.execute(
-      `SELECT doc_id, transfer_id, original_filename, mime_type, size_bytes, file_data
-       FROM transfer_documents
-       WHERE doc_id = ? AND transfer_id = ?`,
-      [req.params.docId, req.params.id]
-    );
-
-    if (!doc) {
-      return res.status(404).json({ message: "Document not found" });
-    }
-
-    if (!doc.file_data) {
-      return res.status(410).json({ message: "File data not available — may have been moved to external storage" });
-    }
-
-    // Derive a safe filename for the Content-Disposition header
-    const safeFilename = doc.original_filename.replace(/[^\w.\-]/g, "_");
-
-    res.set({
-      "Content-Type":        doc.mime_type || "application/octet-stream",
-      "Content-Length":      doc.size_bytes,
-      "Content-Disposition": `attachment; filename="${safeFilename}"`,
-      "Cache-Control":       "private, no-store",
-      "X-Content-Hash":      doc.ipfs_cid || "",   // lets the client verify integrity
-    });
-
-    // file_data is a Buffer when using mysql2 with MEDIUMBLOB
-    return res.end(doc.file_data);
-  } catch (err) {
-    console.error("Download document error:", err);
-    return res.status(500).json({ message: "Internal server error" });
-  }
-});
 
 export default router;

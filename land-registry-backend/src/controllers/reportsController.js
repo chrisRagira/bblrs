@@ -492,8 +492,8 @@ export async function exportReport(req, res) {
          t.transfer_type,
          t.sale_price,
          t.status,
-         u_from.full_name  AS seller,
-         u_to.full_name    AS buyer,
+         u_from.last_name  AS seller,
+         u_to.last_name    AS buyer,
          t.transferred_at
        FROM transfers t
        JOIN parcels p        ON p.parcel_id   = t.parcel_id

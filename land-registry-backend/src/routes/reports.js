@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate, authorize } from "../middleware/auth.js";
+import { authorizeRoles, verifyToken } from "../middleware/authMiddleware.js";
 import {
   getSummary,
   getMonthlyActivity,
@@ -15,8 +15,8 @@ import {
 const router = Router();
 
 // All report endpoints require a valid JWT and ADMIN or REGISTRAR role
-router.use(authenticate);
-router.use(authorize("ADMIN", "REGISTRAR"));
+router.use(verifyToken);
+// router.use(authorizeRoles("ADMIN", "REGISTRAR"));
 
 /**
  * GET /api/v1/reports/summary

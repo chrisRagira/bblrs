@@ -69,11 +69,16 @@ const STATUS_S = {
   ACTIVE:   { bg:"#E0F2F0", color:"#0D7A6F" },
 };
 
+// Land use color map — handles both UPPERCASE and Title Case keys
 const LU_COLORS = {
-  Residential:  "#0D7A6F",
-  Agricultural: "#C28A1A",
-  Commercial:   "#1A3558",
-  Industrial:   "#E05C3A",
+  Residential:   "#0D7A6F",
+  Agricultural:  "#C28A1A",
+  Commercial:    "#1A3558",
+  Industrial:    "#E05C3A",
+  RESIDENTIAL:   "#0D7A6F",
+  AGRICULTURAL:  "#C28A1A",
+  COMMERCIAL:    "#1A3558",
+  INDUSTRIAL:    "#E05C3A",
 };
 
 // ─── API layer ────────────────────────────────────────────────────────────────
@@ -83,7 +88,6 @@ const API_BASE = (typeof import.meta !== "undefined" && import.meta.env?.VITE_AP
 
 const tok = () => localStorage.getItem("token") ?? "";
 
-// Fetch and always return the raw JSON — callers normalise shape
 async function get(path, params = {}) {
   const url = new URL(API_BASE + path, window.location.origin);
   for (const [k, v] of Object.entries(params))
@@ -99,7 +103,7 @@ async function get(path, params = {}) {
   return r.json();
 }
 
-// Safe coercions — never throw, always return the right JS type
+// Safe coercions
 function toArr(raw) {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw;
@@ -110,9 +114,7 @@ function toArr(raw) {
 
 function toObj(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-  // { success, data: { ... } }
   if (raw.data && typeof raw.data === "object" && !Array.isArray(raw.data)) return raw.data;
-  // bare object that isn't an envelope
   if (!("success" in raw) && !("data" in raw)) return raw;
   return {};
 }
@@ -466,11 +468,124 @@ function SysHealth() {
   );
 }
 
+// ─── Data normalisers ─────────────────────────────────────────────────────────
+
+/**
+ * /summary response shape:
+ * { data: { registrations:{value,delta}, transfers:{value,delta},
+ *           encumbrances:{value,delta}, totalValueKES:{value,delta} } }
+ */
+function normaliseSummary(raw) {
+  if (!raw) return null;
+  const d = raw.data ?? raw; // unwrap envelope if present
+  return {
+    totalRegistrations: d.registrations?.value  ?? d.totalRegistrations  ?? null,
+    totalTransfers:     d.transfers?.value       ?? d.totalTransfers      ?? null,
+    activeEncumbrances: d.encumbrances?.value    ?? d.activeEncumbrances  ?? null,
+    // Format KES value — API returns a numeric string like "68201.0000"
+    totalValue: (() => {
+      const raw = d.totalValueKES?.value ?? d.totalValue ?? null;
+      if (raw == null) return null;
+      const n = parseFloat(raw);
+      if (isNaN(n)) return String(raw);
+      return `KES ${n.toLocaleString("en-KE", { minimumFractionDigits:2, maximumFractionDigits:2 })}`;
+    })(),
+    deltas: {
+      registrations: d.registrations?.delta ?? null,
+      transfers:     d.transfers?.delta     ?? null,
+      encumbrances:  d.encumbrances?.delta  ?? null,
+      value:         d.totalValueKES?.delta ?? null,
+    },
+  };
+}
+
+/**
+ * /transfer-summary response shape:
+ * { approved:{count,pct}, rejected:{count,pct}, pending:{count,pct}, total:N }
+ */
+function normaliseTxSum(raw) {
+  if (!raw) return {};
+  const d = raw.data ?? raw;
+  // Handles both nested {count,pct} and flat numeric values
+  const pick = (key, sub) => {
+    const node = d[key];
+    if (node && typeof node === "object") return node[sub] ?? null;
+    return node ?? null; // flat fallback
+  };
+  return {
+    approved:    pick("approved",  "count"),
+    rejected:    pick("rejected",  "count"),
+    pending:     pick("pending",   "count"),
+    approvedPct: pick("approved",  "pct"),
+    rejectedPct: pick("rejected",  "pct"),
+    pendingPct:  pick("pending",   "pct"),
+  };
+}
+
+/**
+ * /transfer-value-by-type response shape:
+ * { data:[{type,count,totalValueKES,pct}], grandTotalKES:N }
+ */
+function normaliseTxValType(raw) {
+  const arr = toArr(raw);
+  return arr.map(r => ({
+    type:  r.type  ?? "Unknown",
+    // Use totalValueKES (API) or value (legacy)
+    value: (() => {
+      const n = r.totalValueKES ?? r.value;
+      if (n == null) return "—";
+      const num = parseFloat(n);
+      if (isNaN(num)) return String(n);
+      return `KES ${num.toLocaleString("en-KE", { minimumFractionDigits:0 })}`;
+    })(),
+    pct: Number(r.pct) || 0,
+  }));
+}
+
+/**
+ * /county-stats — bare array or { data:[...] }
+ * Items: { county, parcels, transfers, totalValueKES, sparkline? }
+ */
+function normaliseCounty(raw) {
+  const arr = Array.isArray(raw) ? raw : toArr(raw);
+  return arr.map(c => ({
+    county:    c.county    ?? c.name ?? "Unknown",
+    parcels:   Number(c.parcels)    || 0,
+    transfers: Number(c.transfers)  || 0,
+    value: (() => {
+      const n = c.totalValueKES ?? c.value;
+      if (n == null) return "—";
+      const num = parseFloat(n);
+      if (isNaN(num)) return String(n);
+      return `KES ${num.toLocaleString("en-KE", { minimumFractionDigits:0 })}`;
+    })(),
+    sparkline: Array.isArray(c.sparkline) ? c.sparkline.map(Number) : [],
+  }));
+}
+
+/**
+ * /recent-transactions — may share shape with /summary (API bug).
+ * When it looks like summary data, return an empty list gracefully.
+ */
+function normaliseTx(raw) {
+  if (!raw) return { items: [], total: 0 };
+
+  // Detect if endpoint accidentally returned summary data
+  const isSummaryShape = raw.data && typeof raw.data === "object" &&
+    !Array.isArray(raw.data) && ("registrations" in raw.data || "transfers" in raw.data);
+  if (isSummaryShape) return { items: [], total: 0 };
+
+  const items = toArr(raw);
+  const total = (raw && !Array.isArray(raw) && typeof raw.total === "number")
+    ? raw.total : items.length;
+  return { items, total };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  MAIN DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function ReportsDashboard() {
-  const [period,    setPeriod]    = useState("2025");
+  const [period,    setPeriod]    = useState("2026");
   const [chartTab,  setChartTab]  = useState("reg");
   const [countyKey, setCountyKey] = useState("parcels");
   const [txFilter,  setTxFilter]  = useState("ALL");
@@ -492,68 +607,73 @@ export default function ReportsDashboard() {
   },                                                                                              [txFilter, txPage]);
 
   // ── Data normalisation ─────────────────────────────────────────────────────
-  // Each toArr / toObj call ensures we never pass an Object to JSX as a child.
 
-  // /summary → object
-  const sumObj   = toObj(apiSummary.raw);
+  // /summary → normalised object
+  const sumObj = normaliseSummary(apiSummary.raw);
 
-  // /land-use → array of { type, count, pct }
-  const landArr  = toArr(apiLandUse.raw).map(d => ({
+  // /land-use → array of { type, count, pct, color }
+  // API returns UPPERCASE type names; colour map handles both cases
+  const landArr = toArr(apiLandUse.raw).map(d => ({
     ...d,
     count: Number(d.count) || 0,
     pct:   Number(d.pct)   || 0,
-    color: LU_COLORS[d.type] ?? "#64748B",
+    // API may supply its own color; fall back to our map by type name
+    color: d.color ?? LU_COLORS[d.type] ?? "#64748B",
+    // Display label: Title-case the type
+    label: d.type
+      ? d.type.charAt(0).toUpperCase() + d.type.slice(1).toLowerCase()
+      : "Unknown",
   }));
 
   // /monthly-activity → array of { month, parcels, transfers, encumbrances }
   const monthArr = toArr(apiMonthly.raw);
 
   // /transfer-outcomes → array of { month, approved, rejected }
-  const outArr   = toArr(apiOutcomes.raw);
+  const outArr = toArr(apiOutcomes.raw);
 
-  // /county-stats → array of { county, parcels, transfers, value, sparkline? }
-  const countyArr = toArr(apiCounty.raw);
+  // /county-stats → normalised array
+  const countyArr = normaliseCounty(apiCounty.raw);
 
-  // /transfer-value-by-type → array of { type, value, pct }
-  const txValArr  = toArr(apiTxValType.raw);
+  // /transfer-value-by-type → normalised array
+  const txValArr = normaliseTxValType(apiTxValType.raw);
 
-  // /transfer-summary → object { approved, rejected, pending, approvedPct, rejectedPct, pendingPct }
-  const txSumObj  = toObj(apiTxSum.raw);
+  // /transfer-summary → normalised flat object
+  const txSumObj = normaliseTxSum(apiTxSum.raw);
 
-  // /recent-transactions → array (may be wrapped in { items, total })
-  const txRaw    = apiTx.raw;
-  const txArr    = toArr(txRaw);
-  const txTotal  = (txRaw && !Array.isArray(txRaw) && typeof txRaw.total === "number")
-    ? txRaw.total
-    : txArr.length;
+  // /recent-transactions → safe { items, total }
+  const { items: txArr, total: txTotal } = normaliseTx(apiTx.raw);
 
   // Sparklines — built once per county, reused on re-renders
   const sparks = useRef({});
   useEffect(() => {
     countyArr.forEach(c => {
       if (!sparks.current[c.county]) {
-        sparks.current[c.county] = Array.isArray(c.sparkline) && c.sparkline.length
-          ? c.sparkline.map(Number)
-          : Array.from({ length:8 }, () => Math.max(0, (c.parcels||0) + Math.round((Math.random()-.5)*30)));
+        sparks.current[c.county] = c.sparkline.length >= 2
+          ? c.sparkline
+          : Array.from({ length:8 }, () =>
+              Math.max(0, (c.parcels || 0) + Math.round((Math.random()-.5)*30)));
       }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiCounty.raw]);
 
-  // KPI cards
+  // KPI cards — sumObj may be null while loading
   const kpis = [
     { label:"Total Registrations",    icon:"📋", accent:true,
-      value: sumObj.totalRegistrations != null ? Number(sumObj.totalRegistrations).toLocaleString() : "—",
-      delta: sumObj.deltas?.registrations, deltaLabel:"YoY" },
+      value: sumObj?.totalRegistrations != null
+        ? Number(sumObj.totalRegistrations).toLocaleString() : "—",
+      delta: sumObj?.deltas?.registrations, deltaLabel:"YoY" },
     { label:"Ownership Transfers",    icon:"🔄",
-      value: sumObj.totalTransfers != null ? Number(sumObj.totalTransfers).toLocaleString() : "—",
-      delta: sumObj.deltas?.transfers, deltaLabel:"YoY" },
+      value: sumObj?.totalTransfers != null
+        ? Number(sumObj.totalTransfers).toLocaleString() : "—",
+      delta: sumObj?.deltas?.transfers, deltaLabel:"YoY" },
     { label:"Active Encumbrances",    icon:"🔒",
-      value: sumObj.activeEncumbrances != null ? Number(sumObj.activeEncumbrances).toLocaleString() : "—",
-      delta: sumObj.deltas?.encumbrances, deltaLabel:"YoY" },
+      value: sumObj?.activeEncumbrances != null
+        ? Number(sumObj.activeEncumbrances).toLocaleString() : "—",
+      delta: sumObj?.deltas?.encumbrances, deltaLabel:"YoY" },
     { label:"Total Value Transacted", icon:"💰",
-      value: typeof sumObj.totalValue === "string" ? sumObj.totalValue : "—",
-      delta: sumObj.deltas?.value, deltaLabel:"YoY" },
+      value: sumObj?.totalValue ?? "—",
+      delta: sumObj?.deltas?.value, deltaLabel:"YoY" },
   ];
 
   // Transfer summary mini-cards
@@ -698,7 +818,8 @@ export default function ReportsDashboard() {
                             alignItems:"center", padding:"8px 0", borderBottom:`1px solid ${C.border}` }}>
                             <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                               <div style={{ width:10, height:10, borderRadius:2, background:d.color }}/>
-                              <span style={{ fontSize:13, color:C.text }}>{d.type}</span>
+                              {/* Use the title-cased label instead of raw type */}
+                              <span style={{ fontSize:13, color:C.text }}>{d.label ?? d.type}</span>
                             </div>
                             <div style={{ textAlign:"right" }}>
                               <span style={{ fontSize:13, fontWeight:600, color:C.navy }}>{d.count.toLocaleString()}</span>
@@ -824,7 +945,7 @@ export default function ReportsDashboard() {
                     </td></tr>
                   : countyArr.map(c => {
                       const sp = sparks.current[c.county] ?? [];
-                      const up = sp.length >= 2 && sp[sp.length-1] > sp[0];
+                      const up = sp.length >= 2 && sp[sp.length-1] >= sp[0];
                       const d  = sp.length >= 2 ? Math.abs(sp[sp.length-1] - sp[0]) : 0;
                       return (
                         <tr key={c.county} className="fi" style={{ borderBottom:`1px solid ${C.border}` }}>
@@ -845,6 +966,7 @@ export default function ReportsDashboard() {
                             {(Number(c.transfers)||0).toLocaleString()}
                           </td>
                           <td style={{ padding:"12px 14px", textAlign:"right", color:C.textMid }}>
+                            {/* Normalised county already has formatted value string */}
                             {String(c.value ?? "—")}
                           </td>
                           <td style={{ padding:"12px 14px", textAlign:"right" }}>
@@ -897,7 +1019,15 @@ export default function ReportsDashboard() {
                   <tbody>
                     {apiTx.loading
                       ? <SkRows rows={8} cols={7}/>
-                      : txArr.map(tx => (
+                      : txArr.length === 0
+                        ? (
+                          <tr>
+                            <td colSpan={7} style={{ padding:"32px 14px", textAlign:"center", color:C.muted, fontSize:13 }}>
+                              No transactions found for this filter.
+                            </td>
+                          </tr>
+                        )
+                        : txArr.map(tx => (
                           <tr key={String(tx.id)} className="fi" style={{ borderBottom:`1px solid ${C.border}` }}>
                             <td style={{ padding:"12px 14px" }}>
                               <span style={{ fontFamily:F.mono, fontSize:12, color:C.teal }}>{String(tx.id)}</span>

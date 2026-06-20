@@ -8,7 +8,7 @@ export const authApi = {
   logout:     ()           => api.post("/auth/logout"),
   refresh:    ()           => api.post("/auth/refresh"),
   getProfile: ()           => api.get("/auth/profile"),
-  updateProfile: (data)    => api.patch("/auth/profile", data),
+  updateProfile: (data)    => api.post("/auth/profile", data),
   forgotPassword: (data) =>
     api.post("/auth/forgot-password", data),
 
@@ -22,7 +22,7 @@ export const parcelsApi = {
   getById: (id, params) => api.get(`/parcels/${id}`, { params }),
   getByOwner: (userId) => api.get(`/parcels/owner/${userId}`),
   create:     (data)       => api.post("/parcels", data),
-  updateStatus: (id, data) => api.patch(`/parcels/${id}/status`, data),
+  updateStatus: (id, data) => api.post(`/parcels/${id}/status`, data),
   getHistory: (id)         => api.get(`/parcels/${id}/history`),
   getDocuments: (id)       => api.get(`/parcels/${id}/documents`),
   uploadDocument: (id, formData) =>
@@ -43,6 +43,8 @@ export const transfersApi = {
   getPending: ()           => api.get("/transfers/pending"),
   getLCB: ()           => api.get("/transfers/lcb"),
   getBySurveyor:(id)       => api.get(`transfers/surveyor/${id}`),
+  appointSurveyor: (id, data)  => api.post(`/transfers/${id}/appoint-surveyor`, data),
+  initiateMpesa:   (id, data)  => api.post(`/transfers/${id}/stamp-duty/mpesa`, data),
   approve:    (id, data)   => api.post(`/transfers/${id}/approve`, data),
   reject:     (id, data)   => api.post(`/transfers/${id}/reject`, data),
   cancel:     (id)         => api.delete(`/transfers/${id}`),
@@ -92,7 +94,7 @@ export const adminApi = {
   getUserById:    (id)     => api.get(`/admin/users/${id}`),
   assignRole:     (id, data)     => api.post(`/admin/users/${id}/roles`, data),
   revokeRole:     (id, roleId)   => api.delete(`/admin/users/${id}/roles/${roleId}`),
-  deactivateUser: (id)           => api.patch(`/admin/users/${id}/deactivate`),
+  deactivateUser: (id)           => api.post(`/admin/users/${id}/deactivate`),
   getAuditLog:    (params)       => api.get("/admin/audit", { params }),
   getReports:    (params)       => api.get("/admin/reports", { params }),
   getReport:      (params)       => api.get("/admin/reports/transactions", { params }),
@@ -108,6 +110,7 @@ export const verifyApi = {
 
 export const usersApi = {
   getByNationalId: (id) => api.get(`/users/by-national-id/${id}`),
+    lookupUser: (nationalId, role) => api.get(`/users/lookup`, { params: { nationalId, role } }),
   getByUserId:     (id) => api.get(`/users/by-user-id/${id}`),
 };
 

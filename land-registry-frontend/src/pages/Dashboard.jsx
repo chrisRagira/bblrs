@@ -16,71 +16,83 @@ import { C } from "../styles/tokens";
 // ─── 11-step workflow ────────────────────────────────────────────────────────
 const TRANSFER_STEPS = [
   {
-    key:   "SALE_INITIATED",
-    label: "Sale Initiated",
+    key:   "PENDING_BUYER_APPROVAL",
+    label: "Buyer Approval",
     icon:  "📝",
-    actor: "Seller",
-    note:  "Seller initiates sale & selects an advocate by ID. Buyer is notified and must approve the purchase.",
+    actor: "Buyer",
+    note:  "Buyer is notified of the sale and must approve the purchase to proceed.",
   },
   {
-    key:   "ADVOCATE_APPOINTED",
-    label: "Agreement Signed",
+    key:   "PENDING_SURVEYOR_APPOINTMENT",
+    label: "Appoint Surveyor",
+    icon:  "📐",
+    actor: "Registry Clerk",
+    note:  "Clerk reviews request and appoints a surveyor if needed.",
+  },
+  {
+    key:   "PENDING_SURVEY",
+    label: "Mutation Form",
+    icon:  "📏",
+    actor: "Surveyor",
+    note:  "Surveyor verifies boundaries, prepares mutation forms, and uploads survey data.",
+  },
+  {
+    key:   "PENDING_ADVOCATE_DOCS",
+    label: "Legal Docs",
     icon:  "✍️",
     actor: "Advocate",
-    note:  "Advocate is notified of appointment, drafts legal documents. Both parties sign. Advocate uploads docs.",
+    note:  "Advocate prepares sale agreement and supporting legal documents for signing.",
   },
   {
-    key:   "DOCUMENTS_VERIFIED",
-    label: "Docs Verified",
+    key:   "PENDING_CLERK_VERIFICATION",
+    label: "Doc Verification",
     icon:  "🔍",
     actor: "Registry Clerk",
-    note:  "Clerk verifies documents & IDs. Appoints a surveyor if required. Notifies LCB if agricultural land.",
+    note:  "Clerk verifies documents and confirms compliance.",
   },
   {
-    key:      "SURVEY_VERIFIED",
-    label:    "Survey Verified",
-    icon:     "📐",
-    actor:    "Surveyor",
-    note:     "Surveyor uploads map & beacon confirmation. Makes boundary adjustments if needed.",
+    key:   "PENDING_LCB_APPROVAL",
+    label: "LCB Approval",
+    icon:  "🏛️",
+    actor: "LCB Officer",
+    note:  "Land Control Board approval is required for agricultural land transactions.",
     optional: true,
   },
   {
-    key:      "LCB_APPROVED",
-    label:    "LCB Approved",
-    icon:     "🏛️",
-    actor:    "LCB Officer",
-    note:     "Required for agricultural land only. LCB approves/rejects consent then forwards to the County Office.",
-    optional: true,
-  },
-  {
-    key:   "RATES_CLEARED",
-    label: "Rates Cleared",
+    key:   "PENDING_COUNTY_RATES",
+    label: "Rates Clearance",
     icon:  "🏢",
     actor: "County Officer",
-    note:  "County officer confirms no outstanding land rates. Forwards to Government Valuer.",
+    note:  "County verifies that all land rates are cleared.",
   },
   {
-    key:   "VALUED",
-    label: "Valued",
+    key:   "PENDING_VALUATION",
+    label: "Valuation",
     icon:  "💰",
-    actor: "Gov. Valuer",
-    note:  "Government valuer inputs land value for stamp duty calculation.",
+    actor: "Government Valuer",
+    note:  "Government valuer assesses land value for stamp duty calculation.",
   },
   {
-    key:   "STAMP_DUTY_PAID",
-    label: "Stamp Duty Paid",
+    key:   "PENDING_STAMP_DUTY",
+    label: "Stamp Duty",
     icon:  "🧾",
     actor: "Buyer / KRA",
-    note:  "System notifies buyer of duty amount. Buyer uploads payment proof. KRA API confirms payment.",
+    note:  "Buyer pays stamp duty and uploads proof. Payment is verified.",
+  },
+  {
+    key:   "PENDING_REGISTRAR_APPROVAL",
+    label: "Final Approval",
+    icon:  "🏛",
+    actor: "Registrar",
+    note:  "Registrar reviews the full transaction and gives final approval.",
   },
   {
     key:   "APPROVED",
-    label: "Registrar Approved",
-    icon:  "🏛",
-    actor: "Registrar",
-    note:  "Registrar reviews the full transaction record and issues final approval or rejection.",
+    label: "Title Issued",
+    icon:  "✅",
+    actor: "System",
+    note:  "Transfer is complete and title deed is issued.",
   },
-  
 ];
 
 const STATUS_STEP_INDEX = Object.fromEntries(
@@ -107,7 +119,7 @@ const ROLE_CONFIG = {
     primaryAction: { label: "Pending Transfers", path: "/transfers/pending" },
     quickLinks: [
       { label: "Request Subdivision", path: "/parcels/subdivision/new", icon: "✂️" },
-      { label: "Request Merger",      path: "/parcels/merger/new",      icon: "🔗" },
+      { label: "Request Amalgamation",      path: "/parcels/amalgamation/new",      icon: "🔗" },
       { label: "Pay Stamp Duty",      path: "/transfers/stamp-duty",    icon: "💳" },
       { label: "Download Title",      path: "/titles",                  icon: "📜" },
     ],
@@ -209,7 +221,7 @@ function getRoleStats(role, parcels, pending) {
   const active     = parcels.filter(p => p.status === "ACTIVE").length;
   const encumbered = parcels.filter(p => p.status === "ENCUMBERED").length;
   const byStatus   = (s) => pending.filter(t => t.status === s).length;
-  console.log(pending)
+  // console.log(pending)
 
   const maps = {
     ADVOCATE: [
@@ -376,6 +388,10 @@ function RoleActionPanel({ role, transfer }) {
 // ─── Compact progress bar (for non-buyer role transfer cards) ─────────────────
 function TransferProgressBar({ status }) {
   const currentIdx = STATUS_STEP_INDEX[status] ?? -1;
+  console.log(STATUS_STEP_INDEX)
+  console.log(status)
+  console.log(currentIdx)
+
   return (
     <div style={{ marginTop: 10, overflowX: "auto" }}>
       <div style={{ display: "flex", alignItems: "center", minWidth: 580 }}>
@@ -765,7 +781,7 @@ export default function Dashboard() {
   const [pending,       setPending]       = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [loading,       setLoading]       = useState(true);
-   console.log(role)
+  //  console.log(role)
   const cfg             = ROLE_CONFIG[role] || ROLE_CONFIG.BUYER_SELLER;
   const myActionStatus  = ACTION_STATUS[role];
   const actionableItems = myActionStatus ? pending.filter(t => t.status === myActionStatus) : [];
@@ -792,10 +808,11 @@ export default function Dashboard() {
             ? transfersApi.getLCB()
             : Promise.resolve({ data: { data: [] } }),
         ]);
+        
 
         const combined = [
           ...new Map(
-            [...(tuRes.data.data || []), ...(tRes.data.data || []),...(lRes.data.data || []),...(sRes.data.data || [])].map(t => [t.transfer_id, t])
+            [...(tuRes.data.data || []), ...(tRes.data.data || []),...(lRes.data.data || []),...(sRes.data.data) || []].map(t => [t.transfer_id, t])
           ).values(),
         ];
 

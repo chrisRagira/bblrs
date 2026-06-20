@@ -1,0 +1,110 @@
+services:
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: proxyaas
+      POSTGRES_USER: proxyaas
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./api/src/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "proxyaas"]
+      interval: 10s
+      retries: 5
+
+  # ── Redis ────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+
+  # ── Node.js API ──────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      PORT: 4000
+      DB_HOST: postgres
+      DB_NAME: proxyaas
+      DB_USER: proxyaas
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
+      INGEST_SECRET: some-long-random-string
+      MPESA_CONSUMER_KEY: ${MPESA_CONSUMER_KEY}
+      MPESA_CONSUMER_SECRET: ${MPESA_CONSUMER_SECRET}
+      MPESA_SHORTCODE: ${MPESA_SHORTCODE}
+      MPESA_PASSKEY: ${MPESA_PASSKEY}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET}
+      PAYPAL_BASE_URL: ${PAYPAL_BASE_URL}
+      APP_URL: ${APP_URL}
+    ports:
+      - "4000:4000"
+
+  # ── Squid ────────────────────────────────────────────────────────────────────
+  squid:
+    build:
+      context: ./squid
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    volumes:
+      - ./squid/squid.conf:/etc/squid/squid.conf:ro
+      - squid_cache:/var/spool/squid
+      - squid_logs:/var/log/squid
+    ports:
+      - "0.0.0.0:3128:3128"
+    # Allow auth helper to reach API container
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── Log Processor ────────────────────────────────────────────────────────────
+  log-processor:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.logprocessor
+    restart: unless-stopped
+    depends_on:
+      - api
+      - squid
+    volumes:
+      - squid_logs:/var/log/squid
+    environment:
+      API_URL: http://api:4000/api
+      INGEST_SECRET: some-long-random-string
+      
+  # ── Frontend (React + Nginx) ─────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+
+volumes:
+  pgdata:
+  squid_cache:
+  squid_logs:

@@ -21,4 +21,20 @@ router.get(
   getDocuments
 );
 
+router.post(
+  "/verify",
+  verifyToken,
+  upload.single("file"),
+  async (req, res) => {
+    const file = req.file;
+    let {
+        titleNumber
+      } = req.body;
+
+    const [parcel] = await req.db.execute(
+        "SELECT * FROM transfer_documents WHERE national_id=?",
+        [ownerNationalId]
+      );
+  }
+);
 export default router;

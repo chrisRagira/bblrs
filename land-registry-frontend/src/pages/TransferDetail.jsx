@@ -14,38 +14,41 @@ const T = {
 
 // ─── status catalogue ─────────────────────────────────────────────────────────
 // Flow:
-//   PENDING_BUYER_APPROVAL → PENDING_SURVEY (surveyor mutation form)
+//   PENDING_BUYER_APPROVAL → PENDING_SURVEYOR_APPOINTMENT (buyer picks surveyor)
+//   → PENDING_SURVEY (surveyor mutation form)
 //   → PENDING_ADVOCATE_DOCS (advocate legal agreement)
 //   → PENDING_CLERK_VERIFICATION → PENDING_LCB_APPROVAL (agric only)
 //   → PENDING_COUNTY_RATES → PENDING_VALUATION
 //   → PENDING_STAMP_DUTY → PENDING_REGISTRAR_APPROVAL → APPROVED
 const STATUS_META = {
-  PENDING_BUYER_APPROVAL:       { label: "Awaiting Buyer Approval",    color: "#f59e0b", bg: "#fffbeb", step: 1 },
-  BUYER_REJECTED:               { label: "Rejected by Buyer",          color: "#ef4444", bg: "#fef2f2", step: 1 },
-  PENDING_SURVEY:               { label: "Awaiting Mutation Form",     color: "#06b6d4", bg: "#ecfeff", step: 2 },
-  PENDING_ADVOCATE_DOCS:        { label: "Awaiting Legal Documents",   color: "#8b5cf6", bg: "#f5f3ff", step: 3 },
-  PENDING_CLERK_VERIFICATION:   { label: "Under Clerk Review",         color: "#3b82f6", bg: "#eff6ff", step: 4 },
-  PENDING_LCB_APPROVAL:         { label: "Awaiting LCB Approval",      color: "#10b981", bg: "#ecfdf5", step: 5 },
-  PENDING_COUNTY_RATES:         { label: "Awaiting Rates Clearance",   color: "#f97316", bg: "#fff7ed", step: 6 },
-  PENDING_VALUATION:            { label: "Awaiting Valuation",         color: "#6366f1", bg: "#eef2ff", step: 7 },
-  PENDING_STAMP_DUTY:           { label: "Awaiting Stamp Duty",        color: "#ec4899", bg: "#fdf2f8", step: 8 },
-  PENDING_REGISTRAR_APPROVAL:   { label: "Awaiting Final Approval",    color: "#0ea5e9", bg: "#f0f9ff", step: 9 },
-  APPROVED:                     { label: "Approved — Title Issued",    color: "#10b981", bg: "#ecfdf5", step: 10 },
-  REJECTED:                     { label: "Rejected",                   color: "#ef4444", bg: "#fef2f2", step: 10 },
-  CANCELLED:                    { label: "Cancelled",                  color: "#9ca3af", bg: "#f9fafb", step: 10 },
+  PENDING_BUYER_APPROVAL:         { label: "Awaiting Buyer Approval",      color: "#f59e0b", bg: "#fffbeb", step: 1 },
+  BUYER_REJECTED:                 { label: "Rejected by Buyer",            color: "#ef4444", bg: "#fef2f2", step: 1 },
+  PENDING_SURVEYOR_APPOINTMENT:   { label: "Awaiting Surveyor Appointment",color: "#06b6d4", bg: "#ecfeff", step: 2 },
+  PENDING_SURVEY:                 { label: "Awaiting Mutation Form",       color: "#0891b2", bg: "#cffafe", step: 3 },
+  PENDING_ADVOCATE_DOCS:          { label: "Awaiting Legal Documents",     color: "#8b5cf6", bg: "#f5f3ff", step: 4 },
+  PENDING_CLERK_VERIFICATION:     { label: "Under Clerk Review",           color: "#3b82f6", bg: "#eff6ff", step: 5 },
+  PENDING_LCB_APPROVAL:           { label: "Awaiting LCB Approval",        color: "#10b981", bg: "#ecfdf5", step: 6 },
+  PENDING_COUNTY_RATES:           { label: "Awaiting Rates Clearance",     color: "#f97316", bg: "#fff7ed", step: 7 },
+  PENDING_VALUATION:              { label: "Awaiting Valuation",           color: "#6366f1", bg: "#eef2ff", step: 8 },
+  PENDING_STAMP_DUTY:             { label: "Awaiting Stamp Duty",          color: "#ec4899", bg: "#fdf2f8", step: 9 },
+  PENDING_REGISTRAR_APPROVAL:     { label: "Awaiting Final Approval",      color: "#0ea5e9", bg: "#f0f9ff", step: 10 },
+  APPROVED:                       { label: "Approved — Title Issued",      color: "#10b981", bg: "#ecfdf5", step: 11 },
+  REJECTED:                       { label: "Rejected",                     color: "#ef4444", bg: "#fef2f2", step: 11 },
+  CANCELLED:                      { label: "Cancelled",                    color: "#9ca3af", bg: "#f9fafb", step: 11 },
 };
 
 const STEPS = [
-  { key: "PENDING_BUYER_APPROVAL",     short: "Buyer",     label: "Buyer Approval"   },
-  { key: "PENDING_SURVEY",             short: "Survey",    label: "Mutation Form"    },
-  { key: "PENDING_ADVOCATE_DOCS",      short: "Advocate",  label: "Legal Docs"       },
-  { key: "PENDING_CLERK_VERIFICATION", short: "Clerk",     label: "Doc Verification" },
-  { key: "PENDING_LCB_APPROVAL",       short: "LCB",       label: "LCB Approval"     },
-  { key: "PENDING_COUNTY_RATES",       short: "Rates",     label: "Rates Clearance"  },
-  { key: "PENDING_VALUATION",          short: "Valuation", label: "Valuation"        },
-  { key: "PENDING_STAMP_DUTY",         short: "Stamp",     label: "Stamp Duty"       },
-  { key: "PENDING_REGISTRAR_APPROVAL", short: "Registrar", label: "Final Approval"   },
-  { key: "APPROVED",                   short: "Title",     label: "Title Issued"     },
+  { key: "PENDING_BUYER_APPROVAL",       short: "Buyer",     label: "Buyer Approval"         },
+  { key: "PENDING_SURVEYOR_APPOINTMENT", short: "Appoint",   label: "Appoint Surveyor"       },
+  { key: "PENDING_SURVEY",               short: "Survey",    label: "Mutation Form"          },
+  { key: "PENDING_ADVOCATE_DOCS",        short: "Advocate",  label: "Legal Docs"             },
+  { key: "PENDING_CLERK_VERIFICATION",   short: "Clerk",     label: "Doc Verification"       },
+  { key: "PENDING_LCB_APPROVAL",         short: "LCB",       label: "LCB Approval"           },
+  { key: "PENDING_COUNTY_RATES",         short: "Rates",     label: "Rates Clearance"        },
+  { key: "PENDING_VALUATION",            short: "Valuation", label: "Valuation"              },
+  { key: "PENDING_STAMP_DUTY",           short: "Stamp",     label: "Stamp Duty"             },
+  { key: "PENDING_REGISTRAR_APPROVAL",   short: "Registrar", label: "Final Approval"         },
+  { key: "APPROVED",                     short: "Title",     label: "Title Issued"           },
 ];
 
 const DOC_ROLE_LABELS = {
@@ -405,7 +408,7 @@ function Timeline({ events }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ── Stage 1: Buyer accepts/rejects ────────────────────────────────────────────
-function BuyerActionPanel({ transfer, onSuccess }) {
+function BuyerApprovalPanel({ transfer, onSuccess }) {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState("");
   const [notes,   setNotes]   = useState("");
@@ -441,6 +444,66 @@ function BuyerActionPanel({ transfer, onSuccess }) {
           ✕ Reject Transfer
         </Btn>
       </div>
+    </SectionCard>
+  );
+}
+
+// ── Stage 2: Buyer appoints surveyor ─────────────────────────────────────────
+function BuyerAppointSurveyorPanel({ transfer, onSuccess }) {
+  const [loading,     setLoading]     = useState(false);
+  const [error,       setError]       = useState("");
+  const [notes,       setNotes]       = useState("");
+  const [surveyorId,  setSurveyorId]  = useState("");
+  const [surveyorName, setSurveyorName] = useState("");
+
+  if (transfer.status !== "PENDING_SURVEYOR_APPOINTMENT") return null;
+
+  // Live-lookup surveyor name as the user types the national ID
+  useEffect(() => {
+    setSurveyorName("");
+    if (surveyorId.length < 6) return;
+    const t = setTimeout(async () => {
+      try {
+        const res = await transfersApi.lookupUser(surveyorId, "SURVEYOR");
+        if (res.data?.data?.name) setSurveyorName(res.data.data.name);
+      } catch { /* not found yet */ }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [surveyorId]);
+
+  const submit = async () => {
+    if (!surveyorId.trim()) { setError("Surveyor National ID is required."); return; }
+    setError(""); setLoading(true);
+    try {
+      await transfersApi.appointSurveyor(transfer.transfer_id, { surveyorNationalId: surveyorId, notes });
+      onSuccess();
+    } catch (e) { setError(e.response?.data?.message || "Action failed."); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <SectionCard title="Appoint a Surveyor" icon="📐" accent="#06b6d4">
+      <AlertBox type="info">
+        You have accepted the transfer. Now appoint a licensed surveyor to prepare the mutation form
+        before the advocate uploads the legal agreement.
+      </AlertBox>
+      <Input label="Surveyor's National ID" value={surveyorId} onChange={setSurveyorId}
+        placeholder="e.g. 23456789" required
+        helper="The surveyor must be a registered SURVEYOR in the BBLRS system." />
+      {surveyorName && (
+        <div style={{ background: "#ecfeff", border: "1px solid #a5f3fc", borderRadius: 8,
+                      padding: "8px 12px", marginBottom: 14, fontSize: 13,
+                      display: "flex", alignItems: "center", gap: 8 }}>
+          <span>✅</span>
+          <span style={{ fontWeight: 600, color: "#0e7490" }}>{surveyorName}</span>
+        </div>
+      )}
+      <Textarea label="Notes (optional)" value={notes} onChange={setNotes}
+        placeholder="Any instructions for the surveyor…" />
+      {error && <AlertBox type="danger">{error}</AlertBox>}
+      <Btn full onClick={submit} loading={loading} disabled={!surveyorId.trim()}>
+        Appoint Surveyor & Notify
+      </Btn>
     </SectionCard>
   );
 }
@@ -773,16 +836,51 @@ function ValuerActionPanel({ transfer, onSuccess }) {
   );
 }
 
-// ── Stage 8: Buyer uploads stamp duty proof ───────────────────────────────────
+// ── Stage 8: Buyer pays stamp duty (M-Pesa or manual upload) ─────────────────
 function StampDutyActionPanel({ transfer, onSuccess }) {
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState("");
-  const [file,    setFile]    = useState(null);
-  const [notes,   setNotes]   = useState("");
+  const [method,    setMethod]    = useState("mpesa"); // "mpesa" | "upload"
+  // M-Pesa state
+  const [phone,     setPhone]     = useState("");
+  const [stkSent,   setStkSent]   = useState(false);
+  const [polling,   setPolling]   = useState(false);
+  const pollRef                   = useRef(null);
+  // Upload state
+  const [file,      setFile]      = useState(null);
+  const [notes,     setNotes]     = useState("");
+  // Shared
+  const [loading,   setLoading]   = useState(false);
+  const [error,     setError]     = useState("");
 
   if (transfer.status !== "PENDING_STAMP_DUTY") return null;
 
-  const submit = async () => {
+  // Poll every 4 s after STK push — backend transitions status on callback
+  useEffect(() => {
+    if (!stkSent) return;
+    setPolling(true);
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await transfersApi.getById(transfer.transfer_id);
+        if (res.data.data.status !== "PENDING_STAMP_DUTY") {
+          clearInterval(pollRef.current);
+          setPolling(false);
+          onSuccess();
+        }
+      } catch { /* ignore */ }
+    }, 4000);
+    return () => clearInterval(pollRef.current);
+  }, [stkSent]);
+
+  const sendStk = async () => {
+    if (!phone.trim()) { setError("Phone number is required."); return; }
+    setError(""); setLoading(true);
+    try {
+      await transfersApi.initiateMpesa(transfer.transfer_id, { phone });
+      setStkSent(true);
+    } catch (e) { setError(e.response?.data?.message || "M-Pesa request failed."); }
+    finally { setLoading(false); }
+  };
+
+  const submitFile = async () => {
     if (!file) { setError("Payment proof document is required."); return; }
     setError(""); setLoading(true);
     try {
@@ -797,22 +895,94 @@ function StampDutyActionPanel({ transfer, onSuccess }) {
 
   return (
     <SectionCard title="Stamp Duty Payment" icon="🧾" accent="#ec4899">
+      {/* Amount due banner */}
       {transfer.stamp_duty_kes && (
         <div style={{ background: "#fdf2f8", border: "1px solid #fbcfe8", borderRadius: 8,
-                      padding: "12px 14px", marginBottom: 14, textAlign: "center" }}>
+                      padding: "12px 14px", marginBottom: 16, textAlign: "center" }}>
           <p style={{ fontSize: 12, color: "#9d174d", margin: 0 }}>Amount Due</p>
-          <p style={{ fontSize: 24, fontWeight: 700, color: "#be185d", margin: "4px 0 0" }}>
+          <p style={{ fontSize: 26, fontWeight: 700, color: "#be185d", margin: "2px 0 0" }}>
             KES {Number(transfer.stamp_duty_kes).toLocaleString()}
           </p>
         </div>
       )}
-      <AlertBox type="info">Upload proof of stamp duty payment (KRA e-slip or bank receipt).</AlertBox>
-      <FileUpload label="Payment Proof" file={file} onChange={setFile}
-        helper="KRA e-slip, bank transfer receipt, or official payment confirmation." required />
-      <Textarea label="Notes (optional)" value={notes} onChange={setNotes}
-        placeholder="Payment reference number, bank, or remarks…" />
-      {error && <AlertBox type="danger">{error}</AlertBox>}
-      <Btn full onClick={submit} loading={loading}>Submit Payment Proof</Btn>
+
+      {/* Method toggle */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+        {[
+          { key: "mpesa",  label: "📱 Pay via M-Pesa" },
+          { key: "upload", label: "📄 Upload Receipt"  },
+        ].map((opt) => (
+          <button key={opt.key} onClick={() => { setMethod(opt.key); setError(""); setStkSent(false); }}
+            style={{
+              flex: 1, padding: "9px 0", borderRadius: 8, fontWeight: 600, fontSize: 13,
+              cursor: "pointer", transition: "all .15s", border: "2px solid",
+              borderColor:  method === opt.key ? "#ec4899" : "#e2e8f0",
+              background:   method === opt.key ? "#fdf2f8" : "#fafafa",
+              color:        method === opt.key ? "#be185d" : C.navy,
+            }}>
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── M-Pesa panel ── */}
+      {method === "mpesa" && !stkSent && (
+        <>
+          <AlertBox type="info">
+            Enter your Safaricom number. An M-Pesa payment prompt will be pushed to your phone.
+          </AlertBox>
+          <Input label="Safaricom Phone Number" value={phone} onChange={setPhone}
+            placeholder="254712345678" type="tel"
+            helper="Use the format 2547XXXXXXXX (no spaces or dashes)." required />
+          {error && <AlertBox type="danger">{error}</AlertBox>}
+          <Btn full onClick={sendStk} loading={loading}>Send M-Pesa Prompt</Btn>
+        </>
+      )}
+
+      {method === "mpesa" && stkSent && (
+        <div style={{ textAlign: "center", padding: "20px 0" }}>
+          <span style={{ fontSize: 44, display: "block", marginBottom: 12 }}>
+            {polling ? "📲" : "✅"}
+          </span>
+          <p style={{ fontWeight: 700, fontSize: 15, color: C.navy, marginBottom: 6 }}>
+            {polling ? "Waiting for M-Pesa confirmation…" : "Payment confirmed!"}
+          </p>
+          <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 16 }}>
+            {polling
+              ? "Enter your M-Pesa PIN on your phone. This page will update automatically."
+              : "Transfer has been forwarded to the Registrar."}
+          </p>
+          {polling && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <div style={{
+                width: 8, height: 8, borderRadius: "50%", background: "#ec4899",
+                animation: "pulse 1.2s infinite",
+              }} />
+              <p style={{ fontSize: 12, color: C.textSecondary, margin: 0 }}>Checking payment status…</p>
+            </div>
+          )}
+          <style>{`@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.8)} }`}</style>
+          <Btn small variant="secondary" onClick={() => { setStkSent(false); setError(""); }}
+            style={{ marginTop: 12 }}>
+            Try different number
+          </Btn>
+        </div>
+      )}
+
+      {/* ── Manual upload panel ── */}
+      {method === "upload" && (
+        <>
+          <AlertBox type="info">
+            Upload proof of stamp duty payment — KRA e-slip, bank receipt, or official confirmation.
+          </AlertBox>
+          <FileUpload label="Payment Proof" file={file} onChange={setFile}
+            helper="KRA e-slip, bank transfer receipt, or official payment confirmation." required />
+          <Textarea label="Notes (optional)" value={notes} onChange={setNotes}
+            placeholder="Payment reference number, bank, date…" />
+          {error && <AlertBox type="danger">{error}</AlertBox>}
+          <Btn full onClick={submitFile} loading={loading}>Submit Payment Proof</Btn>
+        </>
+      )}
     </SectionCard>
   );
 }
@@ -1007,7 +1177,10 @@ export default function TransferDetail() {
 
       {/* ── Role-specific action panels (new flow order) ── */}
       {isBuyer &&
-        <BuyerActionPanel transfer={transfer} onSuccess={load} />}
+        <BuyerApprovalPanel transfer={transfer} onSuccess={load} />}
+
+      {isBuyer &&
+        <BuyerAppointSurveyorPanel transfer={transfer} onSuccess={load} />}
 
       {role === "SURVEYOR" && transfer.surveyor_id === user?.id &&
         <SurveyorActionPanel transfer={transfer} onSuccess={load} />}

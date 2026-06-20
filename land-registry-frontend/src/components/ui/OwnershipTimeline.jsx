@@ -12,7 +12,7 @@ export default function OwnershipTimeline({ records = [] }) {
   return (
     <div style={{ position: "relative" }}>
       {records.map((rec, i) => (
-        <div key={rec.transferID || i} style={{ display: "flex", gap: 20, marginBottom: i < records.length - 1 ? 0 : 0 }}>
+        <div key={rec.transfer_id || i} style={{ display: "flex", gap: 20, marginBottom: i < records.length - 1 ? 0 : 0 }}>
           {/* Timeline spine */}
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
             <div style={{
@@ -35,24 +35,24 @@ export default function OwnershipTimeline({ records = [] }) {
                   padding: "2px 8px", borderRadius: 4,
                   fontWeight: 500, display: "inline-block", marginBottom: 6,
                 }}>
-                  {rec.transferType || rec.type}
+                  {rec.transfer_type || rec.type}
                 </span>
                 <p style={{ fontSize: 14, color: C.textSecondary }}>
-                  <strong style={{ color: C.textPrimary }}>{rec.previousOwnerID || rec.from}</strong>
+                  <strong style={{ color: C.textPrimary }}>{rec.prev_owner_last_name+' '+rec.prev_owner_first_name || rec.from}</strong>
                   {" → "}
-                  <strong style={{ color: C.textPrimary }}>{rec.newOwnerID || rec.to}</strong>
+                  <strong style={{ color: C.textPrimary }}>{rec.new_owner_last_name +' '+rec.new_owner_first_name || rec.to}</strong>
                 </p>
-                {rec.salePriceKES > 0 && (
+                {rec.sale_price > 0 && (
                   <p style={{ fontSize: 13, color: C.teal, fontWeight: 500, marginTop: 3 }}>
-                    KES {rec.salePriceKES.toLocaleString()}
+                    KES {rec.sale_price.toLocaleString()}
                   </p>
                 )}
               </div>
               <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 16 }}>
-                <p style={{ fontSize: 12, color: C.textSecondary }}>{rec.transferDate || rec.date}</p>
-                {rec.txTimestamp && (
+                <p style={{ fontSize: 12, color: C.textSecondary }}>{rec.transferred_at || rec.date}</p>
+                {rec.transferred_at && (
                   <p style={{ fontFamily: font.mono, fontSize: 10, color: C.textSecondary, marginTop: 3 }}>
-                    {rec.transferID}
+                    {rec.transfer_id}
                   </p>
                 )}
               </div>

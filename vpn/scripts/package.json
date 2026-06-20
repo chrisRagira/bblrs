@@ -1,0 +1,7 @@
+{
+  "name": "squid-log-processor",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "log-processor.js",
+  "dependencies": {}
+}

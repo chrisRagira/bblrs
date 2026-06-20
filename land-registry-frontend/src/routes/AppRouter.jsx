@@ -23,6 +23,11 @@ import ForgotPassword from "../pages/ForgotPassword";
 import ResetPassword from "../pages/ResetPassword";
 import ReportsDashboard from "../pages/ReportsDashboard";
 import TransferDetail from "../pages/TransferDetail";
+import FAQPage from "../pages/faq";
+import ContactPage from "../pages/ContactPage";
+import SubDivision from "../pages/SubDivision";
+import SubDivisionForm from "../pages/SubDivisionForm";
+import AmalgamationForm from "../pages/AmalgamationForm";
 
 export default function AppRouter() {
   return (
@@ -39,6 +44,8 @@ export default function AppRouter() {
             <Route path="/search"  element={<SearchResults />} />
             <Route path="/parcels/:id" element={<ParcelDetail />} />
             <Route path="/verify"  element={<DocumentVerifier />} />
+            <Route path="/faq"  element={<FAQPage />} />
+            <Route path="/contact"  element={<ContactPage />} />
 
             {/* ── Authenticated: any role ─────────────────────────── */}
             <Route path="/dashboard" element={
@@ -68,6 +75,26 @@ export default function AppRouter() {
             <Route path="/parcels/:id/upload" element={
               <ProtectedRoute roles={["REGISTRAR"]}>
                 <UploadDocument />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/parcels/:id/subdivision" element={
+              <ProtectedRoute roles={["REGISTRAR",'BUYER/SELLER','LEGAL','ADMIN']}>
+                <SubDivision />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/parcels/subdivision/new" element={
+              <ProtectedRoute roles={["BUYER/SELLER","LEGAL","REGISTRAR","ADMIN"]}>
+                <SubDivisionForm />
+              </ProtectedRoute>
+            } />
+
+            
+
+            <Route path="/parcels/amalgamation/new" element={
+              <ProtectedRoute roles={["BUYER/SELLER","LEGAL","REGISTRAR","ADMIN"]}>
+                <AmalgamationForm />
               </ProtectedRoute>
             } />
 

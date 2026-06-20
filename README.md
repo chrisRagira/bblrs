@@ -1,3 +1,5 @@
+backend nightrmae
+
 echo 'export PATH=$PATH:$HOME/bblrs/fabric-samples/bin' >> ~/.bashrc
 source ~/.bashrc
 docker pull hyperledger/fabric-nodeenv:2.5

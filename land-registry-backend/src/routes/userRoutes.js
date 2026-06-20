@@ -53,4 +53,26 @@ router.get(
   }
 );
 
+router.get("/lookup", verifyToken, async (req, res) => {
+  const { nationalId, role } = req.query;
+  if (!nationalId) return res.status(400).json({ message: "nationalId is required" });
+ 
+  const [[user]] = await req.db.execute(
+    `SELECT user_id, first_name, last_name, role
+     FROM users
+     WHERE national_id = ? ${role ? "AND role = ?" : ""}`,
+    role ? [nationalId, role] : [nationalId]
+  );
+ 
+  if (!user) return res.status(404).json({ message: "User not found" });
+ 
+  return res.json({
+    data: {
+      id:   user.user_id,
+      name: `${user.first_name} ${user.last_name}`,
+      role: user.role,
+    }
+  });
+});
+
 export default router;

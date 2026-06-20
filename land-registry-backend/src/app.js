@@ -13,6 +13,7 @@ import encumbranceRoutes from "./routes/encumbranceRoutes.js"
 import transferRoutes from "./routes/transferRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import reportsRouter from "./routes/reportsRoutes.js";
+import contactRoutes from "./routes/contactRoutes.js";
 const app = express();
 
 import db from "./config/db.js";
@@ -38,6 +39,7 @@ app.options("/{*path}", cors(corsOptions));
 app.use(express.json());
 app.use(morgan("dev"));
 
+app.use("/api/contact", contactRoutes);
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/parcels", parcelRoutes);
 app.use("/api/v1/admin", adminRoutes);

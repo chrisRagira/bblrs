@@ -62,10 +62,10 @@ export default function ParcelDetail() {
         setEncumbrances(eRes.data?.data || []);
         setDocs(dRes.data?.data || []);
       } catch (error) {
-            console.error("Parcel fetch error:", error);
-            
-        // setParcel(DEMO_PARCEL);
+        console.error("Parcel fetch error:", error);
+        
         // setHistory(DEMO_HISTORY);
+        // setParcel(DEMO_PARCEL);
         // setEncumbrances([]);
         // setDocs(DEMO_DOCS);
       } finally {
